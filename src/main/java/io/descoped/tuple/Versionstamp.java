@@ -97,7 +97,7 @@ public record Versionstamp(long commitVersion, int batchVersion, int userVersion
             return byCommit;
         }
         int byBatch = Integer.compare(batchVersion, other.batchVersion);
-        return byBatch != 0 ? byBatch : Integer.compare(userVersion, other.userVersion);
+        return byBatch == 0 ? Integer.compare(userVersion, other.userVersion) : byBatch;
     }
 
     /**

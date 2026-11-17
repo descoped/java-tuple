@@ -56,7 +56,8 @@ class TupleTest {
 
     @Test
     void rejectsUnsupportedTypes() {
-        assertThrows(IllegalArgumentException.class, () -> Tuple.of(new Object()));
+        Object unsupported = new Object();
+        assertThrows(IllegalArgumentException.class, () -> Tuple.of(unsupported));
         assertThrows(IllegalArgumentException.class, () -> Tuple.of('c'));
         assertThrows(NullPointerException.class, () -> Tuple.of((Object[]) null));
     }
@@ -87,7 +88,8 @@ class TupleTest {
     @Test
     void itemsAreUnmodifiable() {
         Tuple tuple = Tuple.of("a", null);
-        assertThrows(UnsupportedOperationException.class, () -> tuple.items().add("b"));
+        List<Object> items = tuple.items();
+        assertThrows(UnsupportedOperationException.class, () -> items.add("b"));
         assertEquals(Arrays.asList("a", null), tuple.items());
     }
 
@@ -144,7 +146,8 @@ class TupleTest {
         Tuple deepest = tuple;
         assertEquals(deepest, Tuple.fromBytes(deepest.pack()));
         assertThrows(IllegalArgumentException.class, () -> Tuple.of(deepest));
-        assertThrows(IllegalArgumentException.class, () -> Tuple.empty().add(deepest));
+        Tuple empty = Tuple.empty();
+        assertThrows(IllegalArgumentException.class, () -> empty.add(deepest));
     }
 
     @Test
@@ -183,9 +186,11 @@ class TupleTest {
 
     @Test
     void packWithVersionstampNeedsExactlyOne() {
-        assertThrows(IllegalArgumentException.class, () -> Tuple.of("a").packWithVersionstamp(new byte[0]));
+        Tuple none = Tuple.of("a");
+        byte[] noPrefix = new byte[0];
+        assertThrows(IllegalArgumentException.class, () -> none.packWithVersionstamp(noPrefix));
         Tuple two = Tuple.of(Versionstamp.incomplete(1), Versionstamp.incomplete(2));
-        assertThrows(IllegalArgumentException.class, () -> two.packWithVersionstamp(new byte[0]));
+        assertThrows(IllegalArgumentException.class, () -> two.packWithVersionstamp(noPrefix));
     }
 
     @Test

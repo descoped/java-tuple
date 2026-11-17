@@ -385,7 +385,7 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      * @return an unmodifiable list, which may hold nulls
      */
     public List<Object> items() {
-        return Collections.unmodifiableList(elements.stream().map(Tuple::copyIfArray).collect(Collectors.toList()));
+        return elements.stream().map(Tuple::copyIfArray).toList();
     }
 
     /**

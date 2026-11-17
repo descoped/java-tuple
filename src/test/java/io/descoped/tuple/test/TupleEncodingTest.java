@@ -1,6 +1,5 @@
 package io.descoped.tuple.test;
 
-import io.descoped.tuple.Range;
 import io.descoped.tuple.Tuple;
 import io.descoped.tuple.Versionstamp;
 
@@ -98,7 +97,8 @@ class TupleEncodingTest {
         BigInteger largest = BigInteger.ONE.shiftLeft(8 * 255).subtract(BigInteger.ONE);
         assertEquals(largest, Tuple.fromBytes(Tuple.of(largest).pack()).getBigInteger(0));
         assertEquals(largest.negate(), Tuple.fromBytes(Tuple.of(largest.negate()).pack()).getBigInteger(0));
-        assertThrows(IllegalArgumentException.class, () -> Tuple.of(largest.add(BigInteger.ONE)));
+        BigInteger tooLarge = largest.add(BigInteger.ONE);
+        assertThrows(IllegalArgumentException.class, () -> Tuple.of(tooLarge));
     }
 
     @Test
@@ -195,7 +195,8 @@ class TupleEncodingTest {
     }
 
     private static void assertInvalid(String hex, String expectedProblem) {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> Tuple.fromBytes(HEX.parseHex(hex)));
+        byte[] bytes = HEX.parseHex(hex);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> Tuple.fromBytes(bytes));
         assertTrue(error.getMessage().contains(expectedProblem), error.getMessage());
     }
 
