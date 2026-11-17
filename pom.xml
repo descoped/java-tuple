@@ -90,6 +90,8 @@
 
     <profiles>
         <!-- Publishing to Maven Central through the Central Portal.
+             The `secrets` profile is not in this pom: it lives in the owner's ~/.m2/settings.xml and loads the
+             Portal token (see ~/.m2/NOTES.md).
              Snapshot (no signing needed): ./mvnw deploy -P central,secrets
              Release (Ove approves each one): ./mvnw release:prepare release:perform -P secrets
              Releases are uploaded with autoPublish=false and published by hand in the Portal. -->

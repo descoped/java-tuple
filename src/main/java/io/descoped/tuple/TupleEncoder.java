@@ -123,12 +123,12 @@ final class TupleEncoder {
 
     /**
      * The nested elements, then 0x00. Only a null is written differently inside a nested tuple, so a tuple without
-     * nulls is copied from its own packed bytes. With a null, or an incomplete versionstamp whose position must be
-     * recorded, the elements are encoded again.
+     * nulls is copied from its own packed bytes. The elements are encoded again when there is a null, an incomplete
+     * versionstamp whose position must be recorded, or packed bytes that are not canonical (decoded as they came).
      */
     private void writeNested(Tuple tuple) {
         writeByte(TypeCode.NESTED);
-        if (tuple.elements().contains(null) || tuple.hasIncompleteVersionstamp()) {
+        if (tuple.elements().contains(null) || tuple.hasIncompleteVersionstamp() || !tuple.isPackedCanonical()) {
             for (Object element : tuple.elements()) {
                 writeElement(element, true);
             }
@@ -159,7 +159,7 @@ final class TupleEncoder {
     }
 
     /** The bytes needed for the magnitude of {@code value}. Long.MIN_VALUE negates to itself and still needs 8. */
-    private static int byteLength(long value) {
+    static int byteLength(long value) {
         long magnitude = value < 0 ? -value : value;
         return (Long.SIZE - Long.numberOfLeadingZeros(magnitude) + 7) / 8;
     }

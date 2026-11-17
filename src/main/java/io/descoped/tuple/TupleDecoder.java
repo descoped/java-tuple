@@ -21,10 +21,24 @@ final class TupleDecoder {
     private static final BigInteger MAX_UNSIGNED_LONG = TupleEncoder.allOnes(Long.BYTES);
     private static final char REPLACEMENT_CHARACTER = '\uFFFD';
 
+    /**
+     * Deeper input is rejected: each level is a nested call, and unchecked depth would end in StackOverflowError.
+     * Real keys nest a few levels; the FoundationDB client itself overflows at a few thousand.
+     */
+    static final int MAX_NESTING_DEPTH = 1000;
+
+    /** The decoded elements, and whether the input was the encoding an encoder would produce for them. */
+    record Decoded(List<Object> elements, boolean canonical) {
+    }
+
     private final byte[] bytes;
     private final int start;
     private final int end;
     private int position;
+    private int depth;
+
+    /** False once an integer is read that uses more bytes, or another code, than an encoder would write. */
+    private boolean canonical = true;
 
     private TupleDecoder(byte[] bytes, int start, int end) {
         this.bytes = bytes;
@@ -33,14 +47,14 @@ final class TupleDecoder {
         this.position = start;
     }
 
-    static List<Object> decode(byte[] bytes, int offset, int length) {
+    static Decoded decode(byte[] bytes, int offset, int length) {
         Objects.checkFromIndexSize(offset, length, bytes.length);
         TupleDecoder decoder = new TupleDecoder(bytes, offset, offset + length);
         List<Object> elements = new ArrayList<>();
         while (decoder.position < decoder.end) {
             elements.add(decoder.readElement());
         }
-        return elements;
+        return new Decoded(elements, decoder.canonical);
     }
 
     private Object readElement() {
@@ -50,7 +64,7 @@ final class TupleDecoder {
             case TypeCode.NULL -> null;
             case TypeCode.BYTES -> readByteString();
             case TypeCode.STRING -> readString(elementStart);
-            case TypeCode.NESTED -> readNested();
+            case TypeCode.NESTED -> readNested(elementStart);
             case TypeCode.NEGATIVE_BIG_INTEGER -> readNegativeBigInteger();
             case TypeCode.POSITIVE_BIG_INTEGER -> readPositiveBigInteger();
             case TypeCode.FLOAT -> readFloat();
@@ -120,9 +134,14 @@ final class TupleDecoder {
     /**
      * Code 0x05: elements up to a 0x00 terminator, where 0x00 0xFF stands for a null element. The nested tuple's own
      * packed form is the same bytes with each such null written as a bare 0x00, so it is copied rather than encoded
-     * again.
+     * again, unless the input was not canonical: then it is encoded afresh.
      */
-    private Tuple readNested() {
+    private Tuple readNested(int elementStart) {
+        if (++depth > MAX_NESTING_DEPTH) {
+            throw error(elementStart, "tuples nested more than " + MAX_NESTING_DEPTH + " levels deep");
+        }
+        boolean canonicalSoFar = canonical;
+        canonical = true;
         int contentStart = position;
         List<Object> elements = new ArrayList<>();
         List<Integer> nullEscapes = new ArrayList<>();
@@ -139,7 +158,13 @@ final class TupleDecoder {
             elements.add(null);
         }
         int contentEnd = position - 1;
-        return Tuple.fromDecoded(elements, copyWithout(contentStart, contentEnd, nullEscapes));
+        depth--;
+        boolean nestedCanonical = canonical;
+        canonical = canonicalSoFar && nestedCanonical;
+        byte[] packed = nestedCanonical
+                ? copyWithout(contentStart, contentEnd, nullEscapes)
+                : TupleEncoder.encode(elements).bytes();
+        return Tuple.fromDecoded(elements, packed, true);
     }
 
     /** The bytes from {@code from} to {@code to}, leaving out those at the given positions, in ascending order. */
@@ -162,7 +187,12 @@ final class TupleDecoder {
      */
     private Number readInteger(int code) {
         int length = Math.abs(code - TypeCode.INTEGER_ZERO);
-        boolean negative = code < TypeCode.INTEGER_ZERO;
+        Number value = readFixedInteger(length, code < TypeCode.INTEGER_ZERO);
+        noteIfNotMinimal(value, length, false);
+        return value;
+    }
+
+    private Number readFixedInteger(int length, boolean negative) {
         long stored = readBigEndian(length);
 
         if (length < Long.BYTES) {
@@ -182,14 +212,33 @@ final class TupleDecoder {
     /** Code 0x1d: a length byte, then the value. */
     private Number readPositiveBigInteger() {
         int length = readByte();
-        return narrow(new BigInteger(1, readBytes(length)));
+        Number value = narrow(new BigInteger(1, readBytes(length)));
+        noteIfNotMinimal(value, length, true);
+        return value;
     }
 
     /** Code 0x0b: a length byte with its bits flipped, then the value in one's complement. */
     private Number readNegativeBigInteger() {
         int length = readByte() ^ 0xff;
         BigInteger stored = new BigInteger(1, readBytes(length));
-        return narrow(stored.subtract(TupleEncoder.allOnes(length)));
+        Number value = narrow(stored.subtract(TupleEncoder.allOnes(length)));
+        noteIfNotMinimal(value, length, true);
+        return value;
+    }
+
+    /**
+     * An integer is canonical when it uses as few bytes as its magnitude needs, with a fixed-length code up to 8 bytes
+     * and a length-prefixed code beyond. Anything else (5 written in two bytes, say) is valid input, but it is not what
+     * an encoder writes.
+     */
+    private void noteIfNotMinimal(Number value, int length, boolean lengthPrefixed) {
+        int minimal = value instanceof Long longValue
+                ? TupleEncoder.byteLength(longValue)
+                : (((BigInteger) value).abs().bitLength() + 7) / 8;
+        boolean minimalIsLengthPrefixed = minimal > TypeCode.MAX_FIXED_INTEGER_BYTES;
+        if (length != minimal || lengthPrefixed != minimalIsLengthPrefixed) {
+            canonical = false;
+        }
     }
 
     /** Undoes the adjustment in {@link TupleEncoder}: a set sign bit marks a value that was positive. */

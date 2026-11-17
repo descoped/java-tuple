@@ -9,6 +9,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -23,6 +25,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Checks byte-for-byte compatibility with the FoundationDB Java client ({@code org.foundationdb:fdb-java}), which
@@ -80,6 +83,87 @@ class FdbCompatibilityTest {
                 .toList();
 
         assertEquals(reference, ours);
+    }
+
+    /** Valid encodings that no encoder writes: integers with more bytes, or another code, than they need. */
+    static Stream<String> nonCanonicalIntegers() {
+        return Stream.of("160005", "1500", "13ff", "12ff00", "1d0107", "0bfef8", "1d09000100000000000000",
+                "1c0000000000000005", "0cffffffffffffff00");
+    }
+
+    /**
+     * Like the reference, a decoded tuple keeps non-canonical bytes as they came at the top level. Nested in another
+     * tuple, it is encoded afresh. Two deliberate differences from fdb-java 8.0.0, for input no encoder writes:
+     * <ul>
+     *   <li>When nesting such a tuple, the reference pads its fresh encoding with zero bytes up to the original
+     *       length, which reads back as extra nulls ({@code 160005} nested comes back as {@code [[5], null]}).
+     *       Here the nested bytes are the reference's encoding of the same values written canonically.</li>
+     *   <li>The reference decodes a small value under a length-prefixed code as BigInteger; here it is a Long, as
+     *       every integer that fits is. The values are compared as numbers.</li>
+     * </ul>
+     */
+    @ParameterizedTest
+    @MethodSource("nonCanonicalIntegers")
+    void nonCanonicalInputIsHandledLikeTheReference(String hex) {
+        byte[] input = HEX.parseHex(hex);
+        Tuple ours = Tuple.fromBytes(input);
+        com.apple.foundationdb.tuple.Tuple reference = com.apple.foundationdb.tuple.Tuple.fromBytes(input);
+
+        assertEquals(HEX.formatHex(reference.pack()), HEX.formatHex(ours.pack()), "top level keeps the input");
+        assertEquals(new BigInteger(reference.getItems().get(0).toString()), ours.getBigInteger(0), "value");
+
+        String canonicalNested = HEX.formatHex(com.apple.foundationdb.tuple.Tuple
+                .from(com.apple.foundationdb.tuple.Tuple.fromList(reference.getItems())).pack());
+        assertEquals(canonicalNested, HEX.formatHex(Tuple.of(ours).pack()), "nested is encoded afresh");
+
+        Tuple oursNested = Tuple.fromBytes(HEX.parseHex("05" + hex + "00"));
+        assertEquals("05" + hex + "00", HEX.formatHex(oursNested.pack()), "top level keeps the nested input");
+        assertEquals(canonicalNested.substring(2, canonicalNested.length() - 2),
+                HEX.formatHex(oursNested.getNestedTuple(0).pack()), "decoded nested tuple packs canonically");
+    }
+
+    @Test
+    void rangeMatchesTheReference() {
+        Random random = new Random(SEED + 2);
+        for (int i = 0; i < 500; i++) {
+            Tuple tuple = randomTuple(random, 0);
+            com.apple.foundationdb.Range reference = toReference(tuple).range();
+            Range ours = tuple.range();
+            assertArrayEquals(reference.begin, ours.begin(), tuple.toString());
+            assertArrayEquals(reference.end, ours.end(), tuple.toString());
+        }
+    }
+
+    /**
+     * The reference's packWithVersionstamp needs the native FoundationDB library, so the result is checked piece by
+     * piece instead: the offset points at the placeholder, the reference decodes the tuple, and with the placeholder
+     * filled in, the bytes are what the reference packs for the completed tuple.
+     */
+    @Test
+    void packWithVersionstampAgreesWithTheReference() {
+        Random random = new Random(SEED + 3);
+        for (int i = 0; i < 500; i++) {
+            int userVersion = random.nextInt(0x10000);
+            Object stamp = random.nextBoolean()
+                    ? Versionstamp.incomplete(userVersion)
+                    : Tuple.of("in", Versionstamp.incomplete(userVersion), null);
+            Tuple tuple = randomTuple(random, 1).add(stamp).addAll(randomTuple(random, 1));
+            byte[] prefix = new byte[random.nextInt(4)];
+            random.nextBytes(prefix);
+
+            byte[] packed = tuple.packWithVersionstamp(prefix);
+            int offset = ByteBuffer.wrap(packed, packed.length - 4, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+            byte[] body = Arrays.copyOfRange(packed, prefix.length, packed.length - 4);
+            assertArrayEquals(prefix, Arrays.copyOf(packed, prefix.length));
+            assertEquals(Versionstamp.incomplete(userVersion),
+                    Versionstamp.fromBytes(Arrays.copyOfRange(packed, offset, offset + Versionstamp.BYTES)));
+            assertTrue(com.apple.foundationdb.tuple.Tuple.fromBytes(body).hasIncompleteVersionstamp());
+
+            Versionstamp complete = new Versionstamp(random.nextLong() & Long.MAX_VALUE, random.nextInt(0x10000), userVersion);
+            System.arraycopy(complete.toBytes(), 0, body, offset - prefix.length, Versionstamp.BYTES);
+            Tuple completed = Tuple.fromBytes(body);
+            assertEquals(HEX.formatHex(toReference(completed).pack()), HEX.formatHex(body), tuple.toString());
+        }
     }
 
     /** Both encoders agree on the bytes, and each decoder reads the same values from them. */

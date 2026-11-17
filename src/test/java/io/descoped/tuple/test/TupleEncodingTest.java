@@ -128,6 +128,31 @@ class TupleEncodingTest {
     }
 
     @Test
+    void rejectsNestingDeeperThanTheLimit() {
+        assertEquals(Tuple.empty(), deepest(Tuple.fromBytes(nested(1000)), 1000));
+        assertInvalid(HEX.formatHex(nested(1001)), "nested more than 1000 levels");
+        byte[] unterminated = new byte[100_000];
+        Arrays.fill(unterminated, (byte) 0x05);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> Tuple.fromBytes(unterminated));
+        assertTrue(error.getMessage().contains("nested more than"), error.getMessage());
+    }
+
+    /** {@code depth} empty tuples, each nested in the next: 0x05 repeated, then 0x00 repeated. */
+    private static byte[] nested(int depth) {
+        byte[] bytes = new byte[2 * depth];
+        Arrays.fill(bytes, 0, depth, (byte) 0x05);
+        return bytes;
+    }
+
+    private static Tuple deepest(Tuple tuple, int levels) {
+        Tuple current = tuple;
+        for (int i = 0; i < levels; i++) {
+            current = current.getNestedTuple(0);
+        }
+        return current;
+    }
+
+    @Test
     void rejectsAStringWithAnUnpairedSurrogate() {
         assertThrows(IllegalArgumentException.class, () -> Tuple.of("broken \uD83D"));
         assertThrows(IllegalArgumentException.class, () -> Tuple.of("broken \uDE00 low"));

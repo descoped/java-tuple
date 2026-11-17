@@ -29,11 +29,14 @@ import java.util.stream.Stream;
  * {@link Versionstamp}, or a nested {@code Tuple} (a {@link List} is also accepted as a nested tuple).
  *
  * <p>Two tuples are equal when they pack to the same bytes, and they compare by those bytes.
+ * A tuple decoded from bytes keeps them as they came, even a valid encoding that an encoder would not write, such
+ * as an integer with more bytes than it needs; such a tuple equals only tuples with the same bytes, and it is encoded
+ * afresh when nested in another tuple.
  * Byte arrays are copied on the way in and out, so a tuple cannot be changed after it is made.
  */
 public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
-    private static final Tuple EMPTY = new Tuple(Collections.emptyList(), new byte[0]);
+    private static final Tuple EMPTY = new Tuple(Collections.emptyList(), new byte[0], true);
 
     /** Canonical element types only (see {@link #canonicalize(Object)}). Unmodifiable, and may contain null. */
     private final List<Object> elements;
@@ -43,9 +46,13 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
     private final boolean hasIncompleteVersionstamp;
 
-    private Tuple(List<Object> elements, byte[] packed) {
+    /** False for bytes decoded as they came that an encoder would have written differently. */
+    private final boolean packedCanonical;
+
+    private Tuple(List<Object> elements, byte[] packed, boolean packedCanonical) {
         this.elements = elements;
         this.packed = packed;
+        this.packedCanonical = packedCanonical;
         this.hasIncompleteVersionstamp = holdsIncompleteVersionstamp(elements);
     }
 
@@ -87,7 +94,7 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         for (Object item : items) {
             canonical.add(canonicalize(item));
         }
-        return new Tuple(Collections.unmodifiableList(canonical), TupleEncoder.encode(canonical).bytes());
+        return new Tuple(Collections.unmodifiableList(canonical), TupleEncoder.encode(canonical).bytes(), true);
     }
 
     /**
@@ -112,13 +119,13 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      * @throws IndexOutOfBoundsException if the range lies outside {@code bytes}
      */
     public static Tuple fromBytes(byte[] bytes, int offset, int length) {
-        List<Object> elements = TupleDecoder.decode(bytes, offset, length);
-        return fromDecoded(elements, Arrays.copyOfRange(bytes, offset, offset + length));
+        TupleDecoder.Decoded decoded = TupleDecoder.decode(bytes, offset, length);
+        return fromDecoded(decoded.elements(), Arrays.copyOfRange(bytes, offset, offset + length), decoded.canonical());
     }
 
-    /** For the decoder: canonical elements and the packed bytes it read them from. */
-    static Tuple fromDecoded(List<Object> elements, byte[] packed) {
-        return new Tuple(Collections.unmodifiableList(elements), packed);
+    /** For the decoder: canonical elements, the packed bytes it read them from, and whether those are canonical. */
+    static Tuple fromDecoded(List<Object> elements, byte[] packed, boolean packedCanonical) {
+        return new Tuple(Collections.unmodifiableList(elements), packed, packedCanonical);
     }
 
     /**
@@ -177,7 +184,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         joined.addAll(elements);
         joined.addAll(other.elements);
         // At the top level, elements are encoded independently, so the packed bytes simply concatenate.
-        return new Tuple(Collections.unmodifiableList(joined), concat(packed, other.packed));
+        return new Tuple(Collections.unmodifiableList(joined), concat(packed, other.packed),
+                packedCanonical && other.packedCanonical);
     }
 
     // --- Reading elements ---
@@ -388,6 +396,11 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
     /** The packed bytes as stored, without copying, for the encoder. */
     byte[] packedBytes() {
         return packed;
+    }
+
+    /** Whether {@link #packedBytes()} is what an encoder writes for the elements. */
+    boolean isPackedCanonical() {
+        return packedCanonical;
     }
 
     // --- Packing ---
