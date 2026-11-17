@@ -43,3 +43,6 @@ logs.txt
 **/.terraform
 **/*.tfstate*
 crash.log
+
+### IntelliJ build output ###
+out/

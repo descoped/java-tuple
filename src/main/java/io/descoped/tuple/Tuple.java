@@ -3,391 +3,557 @@ package io.descoped.tuple;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CoderResult;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static io.descoped.tuple.Constants.BYTES_CODE;
-import static io.descoped.tuple.Constants.DOUBLE_CODE;
-import static io.descoped.tuple.Constants.FALSE_CODE;
-import static io.descoped.tuple.Constants.FLOAT_CODE;
-import static io.descoped.tuple.Constants.INT_ZERO_CODE;
-import static io.descoped.tuple.Constants.NEG_INT_START;
-import static io.descoped.tuple.Constants.POS_INT_END;
-import static io.descoped.tuple.Constants.STRING_CODE;
-import static io.descoped.tuple.Constants.TRUE_CODE;
-import static io.descoped.tuple.Constants.UTF8;
-import static io.descoped.tuple.Constants.UUID_BYTES;
-import static io.descoped.tuple.Constants.UUID_CODE;
-import static io.descoped.tuple.Constants.nil;
+/**
+ * An immutable, ordered list of elements that packs to bytes whose unsigned order is the order of the elements.
+ * The encoding is byte-compatible with the FoundationDB tuple layer; see the package documentation.
+ *
+ * <pre>{@code
+ * byte[] key = Tuple.of("user", 42L, uuid).pack();
+ * Tuple decoded = Tuple.fromBytes(key);
+ * String kind = decoded.getString(0);
+ * long id = decoded.getLong(1);
+ * }</pre>
+ *
+ * <p>Elements may be {@code null}, {@code byte[]}, {@link String}, {@link Long} (or {@code Integer},
+ * {@code Short}, {@code Byte}), {@link BigInteger}, {@link Float}, {@link Double}, {@link Boolean}, {@link UUID},
+ * {@link Versionstamp}, or a nested {@code Tuple} (a {@link List} is also accepted as a nested tuple).
+ *
+ * <p>Two tuples are equal when they pack to the same bytes, and they compare by those bytes.
+ * Byte arrays are copied on the way in and out, so a tuple cannot be changed after it is made.
+ */
+public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
-public class Tuple {
+    private static final Tuple EMPTY = new Tuple(List.of(), new byte[0]);
 
+    /** Canonical element types only (see {@link #canonicalize(Object)}). Unmodifiable, and may contain null. */
     private final List<Object> elements;
-    private final byte[] rep;
 
-    public Tuple(byte[] rep) {
-        this.rep = rep;
-        elements = decode(rep);
+    /** The encoding of {@link #elements}. */
+    private final byte[] packed;
+
+    private final boolean hasIncompleteVersionstamp;
+
+    private Tuple(List<Object> elements, byte[] packed) {
+        this.elements = elements;
+        this.packed = packed;
+        this.hasIncompleteVersionstamp = elements.stream().anyMatch(Tuple::isOrHoldsIncompleteVersionstamp);
     }
 
-    public Tuple(List<Object> elements, byte[] rep) {
-        this.elements = Collections.unmodifiableList(elements);
-        this.rep = rep;
+    // --- Creating tuples ---
+
+    /**
+     * The tuple with no elements.
+     *
+     * @return the empty tuple, which packs to no bytes
+     */
+    public static Tuple empty() {
+        return EMPTY;
     }
 
-    public byte[] toBytes() {
-        return rep;
+    /**
+     * A tuple of the given elements.
+     *
+     * @param elements the elements, of the types listed in the class documentation; for a tuple holding a single
+     *                 null, write {@code Tuple.of((Object) null)}
+     * @return the tuple
+     * @throws IllegalArgumentException if an element has an unsupported type, a string holds an unpaired surrogate,
+     *                                  or an integer exceeds 255 bytes
+     */
+    public static Tuple of(Object... elements) {
+        Objects.requireNonNull(elements, "elements is a null array; use Tuple.of((Object) null) for a tuple holding null");
+        return fromItems(Arrays.asList(elements));
     }
 
-    private List<Object> decode(byte[] rep) {
-        ByteArrayDecoder decoder = new ByteArrayDecoder(rep);
-        List<Object> elements = new ArrayList<>();
-        AtomicBoolean cancel = new AtomicBoolean();
-        while (decoder.hasNext() && !cancel.get()) {
-            Object token = switch (decoder.type()) {
-                case BYTE_ARRAY -> decoder.getByteArray();
-                case BOOLEAN -> decoder.getBoolean();
-                case STRING -> decoder.getString();
-                case INTEGER -> decoder.getInteger();
-                case LONG -> decoder.getLong();
-                case BIG_INTEGER -> decoder.getBigInteger();
-                case FLOAT -> decoder.getFloat();
-                case DOUBLE -> decoder.getDouble();
-                case UUID -> decoder.getUUID();
-                // TODO remove default
-                default -> {
-                    cancel.set(true);
-                    yield null;
-                } // throw new UnsupportedOperationException();
-            };
-            // TODO throw exception on null
-            if (token != null) {
-                elements.add(token);
-            }
+    /**
+     * A tuple of the given items, in iteration order.
+     *
+     * @param items the elements, of the types listed in the class documentation
+     * @return the tuple
+     * @throws IllegalArgumentException if an element has an unsupported type, a string holds an unpaired surrogate,
+     *                                  or an integer exceeds 255 bytes
+     */
+    public static Tuple fromItems(Iterable<?> items) {
+        List<Object> canonical = new ArrayList<>();
+        for (Object item : items) {
+            canonical.add(canonicalize(item));
         }
+        return fromCanonical(canonical);
+    }
+
+    /**
+     * Decodes a packed tuple.
+     *
+     * @param bytes the packed tuple
+     * @return the decoded tuple
+     * @throws IllegalArgumentException if the bytes are not a valid encoding; the message gives the offset
+     */
+    public static Tuple fromBytes(byte[] bytes) {
+        return fromBytes(bytes, 0, bytes.length);
+    }
+
+    /**
+     * Decodes a packed tuple from part of an array.
+     *
+     * @param bytes  the array holding the packed tuple
+     * @param offset where the packed tuple starts
+     * @param length how many bytes it takes
+     * @return the decoded tuple
+     * @throws IllegalArgumentException  if the bytes are not a valid encoding; the message gives the offset
+     * @throws IndexOutOfBoundsException if the range lies outside {@code bytes}
+     */
+    public static Tuple fromBytes(byte[] bytes, int offset, int length) {
+        List<Object> elements = TupleDecoder.decode(bytes, offset, length);
+        return new Tuple(Collections.unmodifiableList(elements), Arrays.copyOfRange(bytes, offset, offset + length));
+    }
+
+    /** For elements already in canonical form, such as those the decoder produces. */
+    static Tuple fromCanonical(List<Object> elements) {
+        byte[] packed = TupleEncoder.encode(elements).bytes();
+        return new Tuple(Collections.unmodifiableList(elements), packed);
+    }
+
+    /**
+     * Gives each supported element type one representation, so that packing and the typed getters have fewer
+     * cases: smaller integers widen to Long, a BigInteger that fits in a long becomes a Long, a List becomes a
+     * Tuple. Byte arrays are copied.
+     */
+    private static Object canonicalize(Object item) {
+        if (item == null
+                || item instanceof String
+                || item instanceof Long
+                || item instanceof Float
+                || item instanceof Double
+                || item instanceof Boolean
+                || item instanceof UUID
+                || item instanceof Versionstamp
+                || item instanceof Tuple) {
+            return item;
+        }
+        if (item instanceof byte[] bytes) {
+            return bytes.clone();
+        }
+        if (item instanceof Integer || item instanceof Short || item instanceof Byte) {
+            return ((Number) item).longValue();
+        }
+        if (item instanceof BigInteger value) {
+            return value.bitLength() < Long.SIZE ? (Object) value.longValue() : value;
+        }
+        if (item instanceof List<?> list) {
+            return fromItems(list);
+        }
+        throw new IllegalArgumentException("Unsupported tuple element type: " + item.getClass().getName());
+    }
+
+    // --- Building on a tuple ---
+
+    /**
+     * A new tuple with one more element at the end. This tuple is unchanged.
+     *
+     * @param item the element to append, of a type listed in the class documentation
+     * @return the longer tuple
+     * @throws IllegalArgumentException if the element has an unsupported type or cannot be encoded
+     */
+    public Tuple add(Object item) {
+        return addAll(fromItems(Collections.singletonList(item)));
+    }
+
+    /**
+     * A new tuple with the elements of {@code other} at the end. This tuple is unchanged.
+     *
+     * @param other the tuple whose elements to append
+     * @return the longer tuple
+     */
+    public Tuple addAll(Tuple other) {
+        List<Object> joined = new ArrayList<>(elements.size() + other.elements.size());
+        joined.addAll(elements);
+        joined.addAll(other.elements);
+        // At the top level, elements are encoded independently, so the packed bytes simply concatenate.
+        return new Tuple(Collections.unmodifiableList(joined), concat(packed, other.packed));
+    }
+
+    // --- Reading elements ---
+
+    /**
+     * The number of elements.
+     *
+     * @return the number of elements, counting nested tuples as one
+     */
+    public int size() {
+        return elements.size();
+    }
+
+    /**
+     * Whether this tuple has no elements.
+     *
+     * @return {@code true} for the empty tuple
+     */
+    public boolean isEmpty() {
+        return elements.isEmpty();
+    }
+
+    /**
+     * The element at {@code index}, in its canonical type: integers as {@code Long} or {@code BigInteger}, nested
+     * tuples as {@code Tuple}, byte arrays as a copy.
+     *
+     * @param index the position, from 0
+     * @return the element, which may be {@code null}
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public Object get(int index) {
+        return copyIfArray(elements.get(index));
+    }
+
+    /**
+     * Whether the element at {@code index} is null.
+     *
+     * @param index the position, from 0
+     * @return {@code true} if the element is null
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public boolean isNull(int index) {
+        return elements.get(index) == null;
+    }
+
+    /**
+     * The string at {@code index}.
+     *
+     * @param index the position, from 0
+     * @return the string, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not a string
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public String getString(int index) {
+        return getAs(index, String.class);
+    }
+
+    /**
+     * The byte array at {@code index}, as a copy.
+     *
+     * @param index the position, from 0
+     * @return the bytes, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not a byte array
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public byte[] getBytes(int index) {
+        byte[] bytes = getAs(index, byte[].class);
+        return bytes == null ? null : bytes.clone();
+    }
+
+    /**
+     * The integer at {@code index}. For integers outside the range of long, use {@link #getBigInteger(int)}.
+     *
+     * @param index the position, from 0
+     * @return the integer
+     * @throws ClassCastException        if the element is not an integer, or does not fit in a long
+     * @throws NullPointerException      if the element is null
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public long getLong(int index) {
+        return getRequired(index, Long.class);
+    }
+
+    /**
+     * The integer at {@code index}, of any size.
+     *
+     * @param index the position, from 0
+     * @return the integer, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not an integer
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public BigInteger getBigInteger(int index) {
+        Object element = elements.get(index);
+        if (element instanceof Long value) {
+            return BigInteger.valueOf(value);
+        }
+        return getAs(index, BigInteger.class);
+    }
+
+    /**
+     * The float at {@code index}. A double is not converted.
+     *
+     * @param index the position, from 0
+     * @return the float
+     * @throws ClassCastException        if the element is not a float
+     * @throws NullPointerException      if the element is null
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public float getFloat(int index) {
+        return getRequired(index, Float.class);
+    }
+
+    /**
+     * The double at {@code index}. A float is not converted.
+     *
+     * @param index the position, from 0
+     * @return the double
+     * @throws ClassCastException        if the element is not a double
+     * @throws NullPointerException      if the element is null
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public double getDouble(int index) {
+        return getRequired(index, Double.class);
+    }
+
+    /**
+     * The boolean at {@code index}.
+     *
+     * @param index the position, from 0
+     * @return the boolean
+     * @throws ClassCastException        if the element is not a boolean
+     * @throws NullPointerException      if the element is null
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public boolean getBoolean(int index) {
+        return getRequired(index, Boolean.class);
+    }
+
+    /**
+     * The UUID at {@code index}.
+     *
+     * @param index the position, from 0
+     * @return the UUID, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not a UUID
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public UUID getUUID(int index) {
+        return getAs(index, UUID.class);
+    }
+
+    /**
+     * The versionstamp at {@code index}.
+     *
+     * @param index the position, from 0
+     * @return the versionstamp, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not a versionstamp
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public Versionstamp getVersionstamp(int index) {
+        return getAs(index, Versionstamp.class);
+    }
+
+    /**
+     * The nested tuple at {@code index}.
+     *
+     * @param index the position, from 0
+     * @return the nested tuple, or {@code null} if the element is null
+     * @throws ClassCastException        if the element is not a tuple
+     * @throws IndexOutOfBoundsException if there is no such element
+     */
+    public Tuple getNestedTuple(int index) {
+        return getAs(index, Tuple.class);
+    }
+
+    /**
+     * The elements, as {@link #get(int)} returns them.
+     *
+     * @return an unmodifiable list, which may hold nulls
+     */
+    public List<Object> items() {
+        return Collections.unmodifiableList(elements.stream().map(Tuple::copyIfArray).collect(Collectors.toList()));
+    }
+
+    /**
+     * The elements, as {@link #get(int)} returns them.
+     *
+     * @return a sequential stream of the elements, which may hold nulls
+     */
+    public Stream<Object> stream() {
+        return elements.stream().map(Tuple::copyIfArray);
+    }
+
+    /**
+     * The elements, as {@link #get(int)} returns them.
+     *
+     * @return an iterator that does not support removal
+     */
+    @Override
+    public Iterator<Object> iterator() {
+        return items().iterator();
+    }
+
+    /** The elements as stored, without copying, for the encoder. */
+    List<Object> elements() {
         return elements;
     }
 
-    private static class ByteArrayDecoder {
+    // --- Packing ---
 
-        final byte[] rep;
-        int pos = 0;
+    /**
+     * The encoded bytes, whose unsigned order is the order of the tuples.
+     *
+     * @return a new array holding the packed tuple
+     * @throws IllegalStateException if the tuple holds an incomplete versionstamp; use
+     *                               {@link #packWithVersionstamp(byte[])}
+     */
+    public byte[] pack() {
+        requireNoIncompleteVersionstamp();
+        return packed.clone();
+    }
 
-        private ByteArrayDecoder(byte[] rep) {
-            this.rep = rep;
+    /**
+     * The encoded bytes after a prefix, such as a subspace's key prefix.
+     *
+     * @param prefix the bytes to put first
+     * @return a new array holding the prefix and then the packed tuple
+     * @throws IllegalStateException if the tuple holds an incomplete versionstamp; use
+     *                               {@link #packWithVersionstamp(byte[])}
+     */
+    public byte[] pack(byte[] prefix) {
+        requireNoIncompleteVersionstamp();
+        return concat(prefix, packed);
+    }
+
+    /**
+     * Packs a tuple that holds exactly one incomplete {@link Versionstamp}, for use as a key or value with
+     * FoundationDB's versionstamp mutations. The result is {@code prefix}, the encoded bytes, and then the offset
+     * of the versionstamp within the result as a 4-byte little-endian integer (the format of API version 520 and
+     * later).
+     *
+     * @param prefix the bytes to put first
+     * @return a new array holding the prefix, the packed tuple and the versionstamp offset
+     * @throws IllegalArgumentException if the tuple does not hold exactly one incomplete versionstamp
+     */
+    public byte[] packWithVersionstamp(byte[] prefix) {
+        TupleEncoder.Encoded encoded = TupleEncoder.encode(elements);
+        List<Integer> offsets = encoded.incompleteVersionstampOffsets();
+        if (offsets.size() != 1) {
+            throw new IllegalArgumentException("Expected exactly one incomplete versionstamp, found " + offsets.size());
         }
+        return ByteBuffer.allocate(prefix.length + encoded.bytes().length + Integer.BYTES)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .put(prefix)
+                .put(encoded.bytes())
+                .putInt(prefix.length + offsets.get(0))
+                .array();
+    }
 
-        byte current() {
-            return rep[pos];
+    /**
+     * Whether this tuple, or a tuple nested in it, holds an incomplete versionstamp.
+     *
+     * @return {@code true} if it does, in which case only {@link #packWithVersionstamp(byte[])} can pack it
+     */
+    public boolean hasIncompleteVersionstamp() {
+        return hasIncompleteVersionstamp;
+    }
+
+    /**
+     * The range of keys that extend this tuple with more elements: every packed tuple that starts with this one,
+     * excluding this tuple itself.
+     *
+     * @return the range from the packed tuple followed by {@code 0x00}, to the packed tuple followed by {@code 0xFF}
+     * @throws IllegalStateException if the tuple holds an incomplete versionstamp
+     */
+    public Range range() {
+        requireNoIncompleteVersionstamp();
+        return new Range(concat(packed, new byte[]{0x00}), concat(packed, new byte[]{(byte) 0xff}));
+    }
+
+    // --- Object methods ---
+
+    /**
+     * Compares the packed bytes as unsigned, which is the order of the elements.
+     *
+     * @param other the tuple to compare with
+     * @return negative, zero or positive as this tuple sorts before, with or after {@code other}
+     */
+    @Override
+    public int compareTo(Tuple other) {
+        return Arrays.compareUnsigned(packed, other.packed);
+    }
+
+    /**
+     * Tuples are equal when they pack to the same bytes.
+     *
+     * @param other the object to compare with
+     * @return {@code true} if {@code other} is a tuple with the same encoding
+     */
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof Tuple tuple && Arrays.equals(packed, tuple.packed);
+    }
+
+    /**
+     * A hash of the packed bytes, consistent with {@link #equals(Object)}.
+     *
+     * @return the hash code
+     */
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(packed);
+    }
+
+    /**
+     * A readable form, for example {@code ("user", 42, b"\x00\x01", null, (1.5, true))}.
+     *
+     * @return the elements in parentheses
+     */
+    @Override
+    public String toString() {
+        return elements.stream().map(Tuple::format).collect(Collectors.joining(", ", "(", ")"));
+    }
+
+    // --- Helpers ---
+
+    private <T> T getAs(int index, Class<T> type) {
+        Object element = elements.get(index);
+        if (element == null || type.isInstance(element)) {
+            return type.cast(element);
         }
+        throw new ClassCastException("Tuple element " + index + " is a " + element.getClass().getSimpleName()
+                + ", not a " + type.getSimpleName());
+    }
 
-        boolean hasNext() {
-            return pos < rep.length;
+    private <T> T getRequired(int index, Class<T> type) {
+        T value = getAs(index, type);
+        if (value == null) {
+            throw new NullPointerException("Tuple element " + index + " is null");
         }
+        return value;
+    }
 
-        byte next() {
-            return rep[pos++];
-        }
-
-        ElementType type() {
-            if (current() == BYTES_CODE) {
-                return ElementType.BYTE_ARRAY;
-            } else if (isBoolean()) {
-                return ElementType.BOOLEAN;
-            } else if (current() == STRING_CODE) {
-                return ElementType.STRING;
-            } else if (isInteger()) {
-                return ElementType.INTEGER;
-            } else if (isLong()) {
-                return ElementType.LONG;
-            } else if (isBigInteger()) {
-                return ElementType.BIG_INTEGER;
-            } else if (isFloat()) {
-                return ElementType.FLOAT;
-            } else if (isDouble()) {
-                return ElementType.DOUBLE;
-            } else if (isUUID()) {
-                return ElementType.UUID;
-            }
-//            throw new UnsupportedOperationException();
-            return ElementType.UNKNOWN;
-        }
-
-        boolean isNotNullTerminated() {
-            return current() != nil
-                    && current() != BYTES_CODE
-                    && current() != STRING_CODE;
-        }
-
-        int findNullTerminator() {
-            for (int i = pos; i < rep.length; i++) {
-                if (rep[i] == nil) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        boolean isBoolean() {
-            return current() == TRUE_CODE || current() == FALSE_CODE;
-        }
-
-        boolean isInteger() {
-            int code = current();
-            boolean integerRange = code > NEG_INT_START && code < POS_INT_END;
-            boolean positive = code >= INT_ZERO_CODE;
-            int n = positive ? code - INT_ZERO_CODE : INT_ZERO_CODE - code;
-            int start = pos + 1;
-            return integerRange && (positive && (n < Integer.BYTES || rep[start] > 0) || !positive && (n < Integer.BYTES || rep[start] < 0));
-        }
-
-        boolean isLong() {
-            int code = current();
-            boolean integerRange = code > NEG_INT_START && code < POS_INT_END;
-            boolean positive = code >= INT_ZERO_CODE;
-            int n = positive ? code - INT_ZERO_CODE : INT_ZERO_CODE - code;
-            int start = pos + 1;
-            return integerRange && (positive && (n < Long.BYTES || rep[start] > 0) || !positive && (n < Long.BYTES || rep[start] < 0));
-        }
-
-        boolean isBigInteger() {
-            int code = current();
-            boolean integerRange = code > NEG_INT_START && code < POS_INT_END;
-            boolean bigIntegerExplicit = code == NEG_INT_START || code == POS_INT_END;
-            return (integerRange && !(isInteger() || isLong())) || bigIntegerExplicit;
-        }
-
-        boolean isFloat() {
-            int code = current();
-            return code == FLOAT_CODE;
-        }
-
-        boolean isDouble() {
-            int code = current();
-            return code == DOUBLE_CODE;
-        }
-
-        boolean isUUID() {
-            int code = current();
-            return code == UUID_CODE;
-        }
-
-        byte[] getByteArray() {
-            if (!(current() == BYTES_CODE) || isNotNullTerminated()) {
-                throw new IllegalArgumentException();
-            }
-            int end = findNullTerminator();
-            if (end == -1) {
-                throw new IllegalStateException();
-            }
-            next(); // skip signature byte
-            byte[] bytes = new byte[end - pos];
-            System.arraycopy(bytes, 0, bytes, 0, end - pos);
-            pos = end + 1;
-            return bytes;
-        }
-
-        boolean getBoolean() {
-            if (current() == FALSE_CODE) {
-                next();
-                pos++;
-                return false;
-            } else if (current() == TRUE_CODE) {
-                next();
-                pos++;
-                return true;
-            }
-            throw new IllegalStateException();
-        }
-
-        Object getString() {
-            if (!(current() == STRING_CODE) || isNotNullTerminated()) {
-                throw new IllegalArgumentException();
-            }
-            int end = findNullTerminator();
-            if (end == -1) {
-                throw new IllegalStateException();
-            }
-            next(); // skip signature byte
-            byte[] bytes = new byte[end - pos];
-            System.arraycopy(rep, pos, bytes, 0, end - pos);
-            pos = end + 1; // TODO make sure all get(Types) increment pos to end+1
-            ByteBuffer bb = ByteBuffer.wrap(bytes);
-            CharBuffer cb = CharBuffer.allocate(bytes.length);
-            CharsetDecoder decoder = UTF8.newDecoder();
-            CoderResult cr = decoder.decode(bb, cb, true);
-            if (cr.isError()) {
-                try {
-                    cr.throwException();
-                } catch (CharacterCodingException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            String result = cb.flip().toString();
-            return result;
-        }
-
-        Integer getInteger() {
-            // decode a int
-            int code = current();
-            boolean positive = code >= INT_ZERO_CODE;
-            int n = positive ? code - INT_ZERO_CODE : INT_ZERO_CODE - code;
-            next(); // skip signature byte
-            int end = pos + n;
-
-            if (end > rep.length) {
-                throw new IllegalArgumentException("Invalid tuple (possible truncation)");
-            }
-
-            if (positive && (n <= Integer.BYTES || rep[pos] > 0)) {
-                int res = 0;
-                for (int i = pos; i < end; i++, pos++) {
-                    res = (res << 8) | (rep[i] & 0xff);
-                }
-                return res;
-
-            } else if (!positive && (n <= Integer.BYTES || rep[pos] < 0)) {
-                int res = ~0;
-                for (int i = pos; i < end; i++, pos++) {
-                    res = (res << 8) | (rep[i] & 0xff);
-                }
-                return res + 1;
-            }
-            throw new IllegalStateException();
-        }
-
-        Long getLong() {
-            // decode a long
-            int code = current();
-            boolean positive = code >= INT_ZERO_CODE;
-            int n = positive ? code - INT_ZERO_CODE : INT_ZERO_CODE - code;
-            next(); // skip signature byte
-            int end = pos + n;
-
-            if (end > rep.length) {
-                throw new IllegalArgumentException("Invalid tuple (possible truncation)");
-            }
-
-            if (positive && (n <= Long.BYTES || rep[pos] > 0)) {
-                long res = 0L;
-                for (int i = pos; i < end; i++, pos++) {
-                    res = (res << 8) | (rep[i] & 0xff);
-                }
-                return res;
-
-            } else if (!positive && (n <= Long.BYTES || rep[pos] < 0)) {
-                long res = ~0;
-                for (int i = pos; i < end; i++, pos++) {
-                    res = (res << 8) | (rep[i] & 0xff);
-                }
-                return res + 1L;
-            }
-            throw new IllegalStateException();
-        }
-
-        BigInteger getBigInteger() {
-            int code = current();
-            next();
-            int start = pos;
-
-            // positive BigInteger
-            if (code == POS_INT_END) {
-                int n = rep[start] & 0xff;
-                byte[] intBytes = new byte[n + 1];
-                System.arraycopy(rep, start + 1, intBytes, 1, n);
-                pos = start + intBytes.length + 1;
-                BigInteger res = new BigInteger(intBytes);
-                return res;
-            }
-
-            // negative BigInteger
-            if (code == NEG_INT_START) {
-                int n = (rep[start] ^ 0xff) & 0xff;
-                byte[] intBytes = new byte[n + 1];
-                System.arraycopy(rep, start + 1, intBytes, 1, n);
-                pos = start + intBytes.length + 1;
-                BigInteger origValue = new BigInteger(intBytes);
-                BigInteger offset = BigInteger.ONE.shiftLeft(n * 8).subtract(BigInteger.ONE);
-                return origValue.subtract(offset);
-            }
-
-            // fallback
-            boolean positive = code >= INT_ZERO_CODE;
-            int n = positive ? code - INT_ZERO_CODE : INT_ZERO_CODE - code;
-            int end = pos + n;
-
-            if (end > rep.length) {
-                throw new IllegalArgumentException("Invalid tuple (possible truncation)");
-            }
-
-            byte[] longBytes = new byte[9];
-            System.arraycopy(rep, start, longBytes, longBytes.length - n, n);
-            pos = start + longBytes.length + 1;
-            if (!positive)
-                for (int i = longBytes.length - n; i < longBytes.length; i++)
-                    longBytes[i] = (byte) (longBytes[i] ^ 0xff);
-
-            BigInteger val = new BigInteger(longBytes);
-            if (!positive) val = val.negate();
-
-            return val;
-
-            /*
-            // Convert to long if in range -- otherwise, leave as BigInteger.
-            if (val.compareTo(LONG_MIN_VALUE) >= 0 && val.compareTo(LONG_MAX_VALUE) <= 0) {
-                state.add(val.longValue(), end);
-            } else {
-                // This can occur if the thing can be represented with 8 bytes but requires using
-                // the most-significant bit as a normal bit instead of the sign bit.
-                state.add(val, end);
-            }
-            */
-        }
-
-        private static float decodeFloatBits(int i) {
-            int origBits = (i >= 0) ? (~i) : (i ^ Integer.MIN_VALUE);
-            return Float.intBitsToFloat(origBits);
-        }
-
-        Float getFloat() {
-            next();
-            int start = pos;
-            int rawFloatBits = ByteBuffer.wrap(rep, start, Float.BYTES).getInt();
-            pos = start + Float.BYTES + 1;
-            float res = decodeFloatBits(rawFloatBits);
-            return res;
-        }
-
-        private static double decodeDoubleBits(long l) {
-            long origBits = (l >= 0) ? (~l) : (l ^ Long.MIN_VALUE);
-            return Double.longBitsToDouble(origBits);
-        }
-
-        Double getDouble() {
-            next();
-            int start = pos;
-            long rawDoubleBits = ByteBuffer.wrap(rep, start, Double.BYTES).getLong();
-            double res = decodeDoubleBits(rawDoubleBits);
-            pos = start + Double.BYTES + 1;
-            return res;
-        }
-
-        UUID getUUID() {
-            next();
-            int start = pos;
-            ByteBuffer bb = ByteBuffer.wrap(rep, start, UUID_BYTES).order(ByteOrder.BIG_ENDIAN);
-            long msb = bb.getLong();
-            long lsb = bb.getLong();
-            pos += UUID_BYTES + 1;
-            return new UUID(msb, lsb);
+    private void requireNoIncompleteVersionstamp() {
+        if (hasIncompleteVersionstamp) {
+            throw new IllegalStateException("Tuple holds an incomplete versionstamp; use packWithVersionstamp");
         }
     }
 
+    private static boolean isOrHoldsIncompleteVersionstamp(Object element) {
+        if (element instanceof Versionstamp versionstamp) {
+            return !versionstamp.isComplete();
+        }
+        return element instanceof Tuple tuple && tuple.hasIncompleteVersionstamp;
+    }
+
+    private static Object copyIfArray(Object element) {
+        return element instanceof byte[] bytes ? bytes.clone() : element;
+    }
+
+    private static byte[] concat(byte[] first, byte[] second) {
+        byte[] result = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
+    private static String format(Object element) {
+        if (element instanceof String string) {
+            return '"' + string.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+        }
+        if (element instanceof byte[] bytes) {
+            return "b\"" + ByteFormat.printable(bytes) + '"';
+        }
+        if (element instanceof Float value) {
+            return value + "f";
+        }
+        return String.valueOf(element);
+    }
 }

@@ -1,37 +1,45 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
+    "config:recommended",
     ":dependencyDashboard"
   ],
-  "prHourlyLimit": 0,
   "packageRules": [
     {
+      "description": "Always the latest stable version; CI on the JDK 17 baseline is the gate",
       "matchManagers": [
-        "maven"
-      ],
-      "updateTypes": [
-        "minor",
-        "patch",
-        "pin",
-        "digest"
+        "maven",
+        "github-actions"
       ],
       "automerge": true
     },
     {
-      "depTypeList": [
-        "devDependencies"
+      "description": "JDK versions in the workflows are deliberate: CI and `respond` build on the Java 17 baseline. They are changed by hand, never bumped.",
+      "matchManagers": [
+        "github-actions"
       ],
-      "automerge": true
+      "matchDepNames": [
+        "java-jdk"
+      ],
+      "enabled": false
     },
     {
-      "matchSourceUrlPrefixes": [
-        "https://github.com/junit-team/junit5"
+      "description": "Maven bumps through the wrapper: Renovate does not update distributionSha256Sum, so CI fails until it is set by hand (see .claude/CLAUDE.md, Maven Wrapper)",
+      "matchManagers": [
+        "maven-wrapper"
       ],
-      "groupName": "junit5 monorepo",
-      "automerge": true
+      "labels": [
+        "maven-wrapper"
+      ],
+      "prBodyNotes": [
+        "Update `distributionSha256Sum` in `.mvn/wrapper/maven-wrapper.properties` to the SHA-256 of the new `apache-maven-<version>-bin.zip`, after checking the zip against Maven's published `.sha512`."
+      ]
     }
   ],
-  "separateMajorMinor": true,
-  "separateMinorPatch": true
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "automerge": true
+  }
 }
