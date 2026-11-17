@@ -1,0 +1,73 @@
+name: CI
+
+# One job on JDK 17, the baseline: every build compiles with `release 17`, so the bytecode does not depend on the
+# JDK, and 17 is the oldest runtime users have. Pull requests: build, tests, Javadoc and the JPMS consumer smoke test.
+# Pushes to master and release tags add coverage and the SonarCloud analysis (not gating). CI publishes nothing:
+# no SNAPSHOTs (the Central Portal's monthly publishing quota is kept for releases) and never a release.
+on:
+  push:
+    branches: [master]
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.claude/**'
+      - '.github/workflows/claude.yml'
+      - '.github/renovate.json'
+      - '.gitignore'
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.claude/**'
+      - '.github/workflows/claude.yml'
+      - '.github/renovate.json'
+      - '.gitignore'
+  # To run it on any branch by hand.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request or branch ends the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (JDK 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # SonarCloud needs the history to attribute new code.
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880  # v6.3.0
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Build, test and Javadoc
+        if: github.event_name != 'push'
+        run: ./mvnw --batch-mode --no-transfer-progress verify javadoc:javadoc
+
+      - name: Build, test, Javadoc and coverage
+        if: github.event_name == 'push'
+        run: ./mvnw --batch-mode --no-transfer-progress verify javadoc:javadoc -P coverage
+
+      # Analysis only: a SonarCloud outage or token problem must not fail the build, so this step does not gate.
+      - name: SonarCloud
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+        run: ./mvnw --batch-mode --no-transfer-progress -P sonar org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+      - name: JPMS consumer smoke test
+        run: src/it/consumer/run.sh

@@ -1,45 +1,16 @@
-.idea/*
-*lib/*
-HELP.md
+# Build output
 target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**
-!**/src/test/**
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
+# IDE
+/.idea
 *.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-
-logs/
-logs.txt
-
-### VS Code ###
 .vscode/
 
-# Markdown preview
-/readme.md.temp
-**/.DS_Store
+# macOS
+.DS_Store
 
-### Terraform ###
-**/.terraform
-**/*.tfstate*
-crash.log
+# JVM crash logs
+hs_err_pid*
+
+# IntelliJ build output
+out/
