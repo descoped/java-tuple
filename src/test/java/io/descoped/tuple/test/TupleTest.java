@@ -10,6 +10,7 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,6 +92,14 @@ class TupleTest {
         List<Object> items = tuple.items();
         assertThrows(UnsupportedOperationException.class, () -> items.add("b"));
         assertEquals(Arrays.asList("a", null), tuple.items());
+    }
+
+    @Test
+    void emptyTupleAllowsLookingForNull() {
+        // List.of() throws on contains(null); the element lists of the empty tuple must not
+        assertFalse(Tuple.empty().items().contains(null));
+        assertFalse(Tuple.fromBytes(new byte[0]).items().contains(null));
+        assertEquals("0500", HexFormat.of().formatHex(Tuple.of(Tuple.empty()).pack())); // the encoder asks too
     }
 
     @Test
