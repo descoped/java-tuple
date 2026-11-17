@@ -15,7 +15,23 @@ import java.util.UUID;
 final class TupleEncoder {
 
     /** The encoded bytes, and the offset of the 12 versionstamp bytes for each incomplete versionstamp. */
-    record Encoded(byte[] bytes, List<Integer> incompleteVersionstampOffsets) {
+    static final class Encoded {
+
+        private final byte[] bytes;
+        private final List<Integer> incompleteVersionstampOffsets;
+
+        private Encoded(byte[] bytes, List<Integer> incompleteVersionstampOffsets) {
+            this.bytes = bytes;
+            this.incompleteVersionstampOffsets = incompleteVersionstampOffsets;
+        }
+
+        byte[] bytes() {
+            return bytes;
+        }
+
+        List<Integer> incompleteVersionstampOffsets() {
+            return incompleteVersionstampOffsets;
+        }
     }
 
     private byte[] buffer = new byte[32];
@@ -49,7 +65,7 @@ final class TupleEncoder {
         } else if (element instanceof Double value) {
             writeDouble(value);
         } else if (element instanceof Boolean value) {
-            writeByte(value ? TypeCode.TRUE : TypeCode.FALSE);
+            writeByte(value.booleanValue() ? TypeCode.TRUE : TypeCode.FALSE);
         } else if (element instanceof UUID uuid) {
             writeUuid(uuid);
         } else if (element instanceof Versionstamp versionstamp) {
@@ -91,8 +107,10 @@ final class TupleEncoder {
     private void writeString(String string) {
         writeByte(TypeCode.STRING);
         ensureCapacity(3 * string.length() + 1);
-        for (int i = 0; i < string.length(); i++) {
+        int i = 0;
+        while (i < string.length()) {
             char c = string.charAt(i);
+            int width = 1; // chars consumed
             if (c == 0x00) {
                 buffer[size++] = 0x00;
                 buffer[size++] = (byte) TypeCode.ESCAPE;
@@ -115,8 +133,9 @@ final class TupleEncoder {
                 buffer[size++] = (byte) (0x80 | ((codePoint >> 12) & 0x3f));
                 buffer[size++] = (byte) (0x80 | ((codePoint >> 6) & 0x3f));
                 buffer[size++] = (byte) (0x80 | (codePoint & 0x3f));
-                i++; // the low surrogate is part of this code point
+                width = 2; // the low surrogate is part of this code point
             }
+            i += width;
         }
         buffer[size++] = 0x00;
     }

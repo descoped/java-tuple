@@ -18,7 +18,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -73,7 +72,7 @@ class FdbCompatibilityTest {
     @Test
     void sortsInTheSameOrderAsTheReference() {
         Random random = new Random(SEED + 1);
-        List<Tuple> tuples = IntStream.range(0, 2_000).mapToObj(i -> randomTuple(random, 0)).collect(Collectors.toList());
+        List<Tuple> tuples = IntStream.range(0, 2_000).mapToObj(i -> randomTuple(random, 0)).toList();
 
         List<String> ours = tuples.stream().sorted().map(t -> HEX.formatHex(t.pack())).toList();
         List<String> reference = tuples.stream()

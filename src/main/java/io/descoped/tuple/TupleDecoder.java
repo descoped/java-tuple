@@ -20,6 +20,7 @@ final class TupleDecoder {
 
     private static final BigInteger MAX_UNSIGNED_LONG = TupleEncoder.allOnes(Long.BYTES);
     private static final char REPLACEMENT_CHARACTER = '\uFFFD';
+    private static final String TRUNCATED = "unexpected end of data";
 
     /** The decoded elements, and whether the input was the encoding an encoder would produce for them. */
     record Decoded(List<Object> elements, boolean canonical) {
@@ -116,11 +117,10 @@ final class TupleDecoder {
         }
         byte[] content = new byte[to - from - escapes];
         int length = 0;
-        for (int i = from; i < to; i++) {
+        int i = from;
+        while (i < to) {
             content[length++] = bytes[i];
-            if (bytes[i] == 0x00) {
-                i++; // the 0xFF that follows is not content
-            }
+            i += bytes[i] == 0x00 ? 2 : 1; // after a 0x00, the 0xFF escape is not content
         }
         return content;
     }
@@ -140,17 +140,19 @@ final class TupleDecoder {
         int contentStart = position;
         List<Object> elements = new ArrayList<>();
         List<Integer> nullEscapes = new ArrayList<>();
-        while (true) {
+        boolean ended = false;
+        while (!ended) {
             if (peekByte() != TypeCode.NULL) {
                 elements.add(readElement());
-                continue;
+            } else {
+                position++;
+                if (skipEscape()) {
+                    nullEscapes.add(position - 1); // 0x00 0xFF: a null element
+                    elements.add(null);
+                } else {
+                    ended = true; // a bare 0x00: the end of the nested tuple
+                }
             }
-            position++;
-            if (!skipEscape()) {
-                break;
-            }
-            nullEscapes.add(position - 1);
-            elements.add(null);
         }
         int contentEnd = position - 1;
         depth--;
@@ -257,14 +259,14 @@ final class TupleDecoder {
 
     private int readByte() {
         if (position >= end) {
-            throw error(position, "unexpected end of data");
+            throw error(position, TRUNCATED);
         }
         return bytes[position++] & 0xff;
     }
 
     private int peekByte() {
         if (position >= end) {
-            throw error(position, "unexpected end of data");
+            throw error(position, TRUNCATED);
         }
         return bytes[position] & 0xff;
     }
@@ -280,7 +282,7 @@ final class TupleDecoder {
 
     private byte[] readBytes(int count) {
         if (count > end - position) {
-            throw error(position, "unexpected end of data");
+            throw error(position, TRUNCATED);
         }
         byte[] result = Arrays.copyOfRange(bytes, position, position + count);
         position += count;
