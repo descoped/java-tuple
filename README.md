@@ -66,8 +66,9 @@ byte[] key = Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(
 ### Malformed input
 
 `Tuple.fromBytes` throws `IllegalArgumentException` for anything that is not a valid encoding, with the offset of the
-problem: a missing terminator, a truncated value, an unknown type code, or a string that is not UTF-8. It never returns
-part of a tuple.
+problem: a missing terminator, a truncated value, an unknown type code, a string that is not UTF-8, or tuples nested more
+than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested deeper than
+that is rejected too, so the library never writes bytes it will not read back.
 
 ## Compatibility
 

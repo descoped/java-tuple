@@ -21,12 +21,6 @@ final class TupleDecoder {
     private static final BigInteger MAX_UNSIGNED_LONG = TupleEncoder.allOnes(Long.BYTES);
     private static final char REPLACEMENT_CHARACTER = '\uFFFD';
 
-    /**
-     * Deeper input is rejected: each level is a nested call, and unchecked depth would end in StackOverflowError.
-     * Real keys nest a few levels; the FoundationDB client itself overflows at a few thousand.
-     */
-    static final int MAX_NESTING_DEPTH = 1000;
-
     /** The decoded elements, and whether the input was the encoding an encoder would produce for them. */
     record Decoded(List<Object> elements, boolean canonical) {
     }
@@ -137,8 +131,9 @@ final class TupleDecoder {
      * again, unless the input was not canonical: then it is encoded afresh.
      */
     private Tuple readNested(int elementStart) {
-        if (++depth > MAX_NESTING_DEPTH) {
-            throw error(elementStart, "tuples nested more than " + MAX_NESTING_DEPTH + " levels deep");
+        // Each level is a nested call: unchecked depth would end in StackOverflowError, not a clear error.
+        if (++depth > Tuple.MAX_NESTING_DEPTH) {
+            throw error(elementStart, "tuples nested more than " + Tuple.MAX_NESTING_DEPTH + " levels deep");
         }
         boolean canonicalSoFar = canonical;
         canonical = true;

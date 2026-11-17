@@ -36,6 +36,13 @@ import java.util.stream.Stream;
  */
 public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
+    /**
+     * The deepest nesting allowed: a chain of this many tuples, each inside the next, within a tuple. Real keys nest
+     * a few levels. Deeper tuples are rejected when built and when decoded, so this library never writes bytes that
+     * it will not read back.
+     */
+    public static final int MAX_NESTING_DEPTH = 1000;
+
     private static final Tuple EMPTY = new Tuple(Collections.emptyList(), new byte[0], true);
 
     /** Canonical element types only (see {@link #canonicalize(Object)}). Unmodifiable, and may contain null. */
@@ -46,6 +53,9 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
     private final boolean hasIncompleteVersionstamp;
 
+    /** How many levels of nested tuples lie below this one: 0 when it holds no nested tuple. */
+    private final int nestingDepth;
+
     /** False for bytes decoded as they came that an encoder would have written differently. */
     private final boolean packedCanonical;
 
@@ -54,6 +64,10 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         this.packed = packed;
         this.packedCanonical = packedCanonical;
         this.hasIncompleteVersionstamp = holdsIncompleteVersionstamp(elements);
+        this.nestingDepth = nestingDepthOf(elements);
+        if (nestingDepth > MAX_NESTING_DEPTH) {
+            throw new IllegalArgumentException("Tuples nested more than " + MAX_NESTING_DEPTH + " levels deep");
+        }
     }
 
     // --- Creating tuples ---
@@ -74,7 +88,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      *                 null, write {@code Tuple.of((Object) null)}
      * @return the tuple
      * @throws IllegalArgumentException if an element has an unsupported type, a string holds an unpaired surrogate,
-     *                                  or an integer exceeds 255 bytes
+     *                                  an integer exceeds 255 bytes, or tuples nest deeper than
+     *                                  {@link #MAX_NESTING_DEPTH}
      */
     public static Tuple of(Object... elements) {
         Objects.requireNonNull(elements, "elements is a null array; use Tuple.of((Object) null) for a tuple holding null");
@@ -87,7 +102,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      * @param items the elements, of the types listed in the class documentation
      * @return the tuple
      * @throws IllegalArgumentException if an element has an unsupported type, a string holds an unpaired surrogate,
-     *                                  or an integer exceeds 255 bytes
+     *                                  an integer exceeds 255 bytes, or tuples nest deeper than
+     *                                  {@link #MAX_NESTING_DEPTH}
      */
     public static Tuple fromItems(Iterable<?> items) {
         List<Object> canonical = new ArrayList<>();
@@ -102,7 +118,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      *
      * @param bytes the packed tuple
      * @return the decoded tuple
-     * @throws IllegalArgumentException if the bytes are not a valid encoding; the message gives the offset
+     * @throws IllegalArgumentException if the bytes are not a valid encoding, or nest tuples deeper than
+     *                                  {@link #MAX_NESTING_DEPTH}; the message gives the offset
      */
     public static Tuple fromBytes(byte[] bytes) {
         return fromBytes(bytes, 0, bytes.length);
@@ -115,7 +132,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      * @param offset where the packed tuple starts
      * @param length how many bytes it takes
      * @return the decoded tuple
-     * @throws IllegalArgumentException  if the bytes are not a valid encoding; the message gives the offset
+     * @throws IllegalArgumentException  if the bytes are not a valid encoding, or nest tuples deeper than
+     *                                   {@link #MAX_NESTING_DEPTH}; the message gives the offset
      * @throws IndexOutOfBoundsException if the range lies outside {@code bytes}
      */
     public static Tuple fromBytes(byte[] bytes, int offset, int length) {
@@ -167,7 +185,8 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      *
      * @param item the element to append, of a type listed in the class documentation
      * @return the longer tuple
-     * @throws IllegalArgumentException if the element has an unsupported type or cannot be encoded
+     * @throws IllegalArgumentException if the element has an unsupported type or cannot be encoded, or the result
+     *                                  would nest deeper than {@link #MAX_NESTING_DEPTH}
      */
     public Tuple add(Object item) {
         return addAll(fromItems(Collections.singletonList(item)));
@@ -542,6 +561,16 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         if (hasIncompleteVersionstamp) {
             throw new IllegalStateException("Tuple holds an incomplete versionstamp; use packWithVersionstamp");
         }
+    }
+
+    private static int nestingDepthOf(List<Object> elements) {
+        int deepest = 0;
+        for (Object element : elements) {
+            if (element instanceof Tuple tuple) {
+                deepest = Math.max(deepest, tuple.nestingDepth + 1);
+            }
+        }
+        return deepest;
     }
 
     private static boolean holdsIncompleteVersionstamp(List<Object> elements) {

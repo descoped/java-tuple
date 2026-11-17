@@ -136,6 +136,18 @@ class TupleTest {
     }
 
     @Test
+    void buildingRejectsNestingDeeperThanTheLimit() {
+        Tuple tuple = Tuple.empty();
+        for (int level = 0; level < Tuple.MAX_NESTING_DEPTH; level++) {
+            tuple = Tuple.of(tuple);
+        }
+        Tuple deepest = tuple;
+        assertEquals(deepest, Tuple.fromBytes(deepest.pack()));
+        assertThrows(IllegalArgumentException.class, () -> Tuple.of(deepest));
+        assertThrows(IllegalArgumentException.class, () -> Tuple.empty().add(deepest));
+    }
+
+    @Test
     void rangeCoversLongerTuplesWithTheSamePrefix() {
         Range range = Tuple.of("user", 42).range();
         assertTrue(range.contains(Tuple.of("user", 42, "name").pack()));
