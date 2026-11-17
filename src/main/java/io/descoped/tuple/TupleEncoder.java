@@ -1,11 +1,6 @@
 package io.descoped.tuple;
 
 import java.math.BigInteger;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -44,7 +39,7 @@ final class TupleEncoder {
         } else if (element instanceof byte[] bytes) {
             writeEscaped(TypeCode.BYTES, bytes);
         } else if (element instanceof String string) {
-            writeEscaped(TypeCode.STRING, encodeUtf8(string));
+            writeString(string);
         } else if (element instanceof Long value) {
             writeInteger(value);
         } else if (element instanceof BigInteger value) {
@@ -86,10 +81,59 @@ final class TupleEncoder {
         writeByte(0x00);
     }
 
+    /**
+     * UTF-8, written straight into the buffer with the same 0x00 escaping and terminator as a byte string. An unpaired
+     * surrogate has no UTF-8 form, so it is rejected rather than replaced.
+     *
+     * <p>No char takes more than 3 bytes (a surrogate pair takes 4 for 2 chars, an escaped 0x00 takes 2), so the
+     * space is reserved once and the loop writes without further checks.
+     */
+    private void writeString(String string) {
+        writeByte(TypeCode.STRING);
+        ensureCapacity(3 * string.length() + 1);
+        for (int i = 0; i < string.length(); i++) {
+            char c = string.charAt(i);
+            if (c == 0x00) {
+                buffer[size++] = 0x00;
+                buffer[size++] = (byte) TypeCode.ESCAPE;
+            } else if (c < 0x80) {
+                buffer[size++] = (byte) c;
+            } else if (c < 0x800) {
+                buffer[size++] = (byte) (0xc0 | (c >> 6));
+                buffer[size++] = (byte) (0x80 | (c & 0x3f));
+            } else if (!Character.isSurrogate(c)) {
+                buffer[size++] = (byte) (0xe0 | (c >> 12));
+                buffer[size++] = (byte) (0x80 | ((c >> 6) & 0x3f));
+                buffer[size++] = (byte) (0x80 | (c & 0x3f));
+            } else {
+                int codePoint = string.codePointAt(i);
+                if (!Character.isSupplementaryCodePoint(codePoint)) {
+                    throw new IllegalArgumentException("String has an unpaired surrogate at index " + i
+                            + " and cannot be encoded as UTF-8");
+                }
+                buffer[size++] = (byte) (0xf0 | (codePoint >> 18));
+                buffer[size++] = (byte) (0x80 | ((codePoint >> 12) & 0x3f));
+                buffer[size++] = (byte) (0x80 | ((codePoint >> 6) & 0x3f));
+                buffer[size++] = (byte) (0x80 | (codePoint & 0x3f));
+                i++; // the low surrogate is part of this code point
+            }
+        }
+        buffer[size++] = 0x00;
+    }
+
+    /**
+     * The nested elements, then 0x00. Only a null is written differently inside a nested tuple, so a tuple without
+     * nulls is copied from its own packed bytes. With a null, or an incomplete versionstamp whose position must be
+     * recorded, the elements are encoded again.
+     */
     private void writeNested(Tuple tuple) {
         writeByte(TypeCode.NESTED);
-        for (Object element : tuple.elements()) {
-            writeElement(element, true);
+        if (tuple.elements().contains(null) || tuple.hasIncompleteVersionstamp()) {
+            for (Object element : tuple.elements()) {
+                writeElement(element, true);
+            }
+        } else {
+            writeBytes(tuple.packedBytes());
         }
         writeByte(0x00);
     }
@@ -211,20 +255,5 @@ final class TupleEncoder {
     /** 2^(8 * byteCount) - 1: the value that turns a negative number into its one's complement. */
     static BigInteger allOnes(int byteCount) {
         return BigInteger.ONE.shiftLeft(8 * byteCount).subtract(BigInteger.ONE);
-    }
-
-    /** Strict UTF-8. {@link String#getBytes} would quietly replace an unpaired surrogate with '?'. */
-    private static byte[] encodeUtf8(String string) {
-        try {
-            ByteBuffer encoded = StandardCharsets.UTF_8.newEncoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .encode(CharBuffer.wrap(string));
-            byte[] bytes = new byte[encoded.remaining()];
-            encoded.get(bytes);
-            return bytes;
-        } catch (CharacterCodingException e) {
-            throw new IllegalArgumentException("String contains an unpaired surrogate and cannot be encoded as UTF-8", e);
-        }
     }
 }

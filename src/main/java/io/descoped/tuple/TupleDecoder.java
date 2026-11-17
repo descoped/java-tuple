@@ -19,6 +19,7 @@ import java.util.UUID;
 final class TupleDecoder {
 
     private static final BigInteger MAX_UNSIGNED_LONG = TupleEncoder.allOnes(Long.BYTES);
+    private static final char REPLACEMENT_CHARACTER = '\uFFFD';
 
     private final byte[] bytes;
     private final int start;
@@ -47,8 +48,8 @@ final class TupleDecoder {
         int code = readByte();
         return switch (code) {
             case TypeCode.NULL -> null;
-            case TypeCode.BYTES -> readEscaped();
-            case TypeCode.STRING -> decodeUtf8(readEscaped(), elementStart);
+            case TypeCode.BYTES -> readByteString();
+            case TypeCode.STRING -> readString(elementStart);
             case TypeCode.NESTED -> readNested();
             case TypeCode.NEGATIVE_BIG_INTEGER -> readNegativeBigInteger();
             case TypeCode.POSITIVE_BIG_INTEGER -> readPositiveBigInteger();
@@ -67,34 +68,64 @@ final class TupleDecoder {
         };
     }
 
-    /** Content up to an unescaped 0x00 terminator, with each 0x00 0xFF turned back into 0x00. */
-    private byte[] readEscaped() {
+    /** Code 0x01: the bytes up to the terminator, with the escapes removed. */
+    private byte[] readByteString() {
         int contentStart = position;
+        int escapes = skipPastTerminator();
+        return unescape(contentStart, position - 1, escapes);
+    }
+
+    /** Code 0x02: UTF-8 up to the terminator. A string without 0x00 bytes is decoded straight from the input. */
+    private String readString(int elementStart) {
+        int contentStart = position;
+        int escapes = skipPastTerminator();
+        int contentEnd = position - 1;
+        if (escapes == 0) {
+            return decodeUtf8(bytes, contentStart, contentEnd - contentStart, elementStart);
+        }
+        byte[] content = unescape(contentStart, contentEnd, escapes);
+        return decodeUtf8(content, 0, content.length, elementStart);
+    }
+
+    /** Moves past the 0x00 that ends a byte or text string, counting the 0x00 0xFF escapes on the way. */
+    private int skipPastTerminator() {
         int escapes = 0;
         while (true) {
             if (readByte() != 0x00) {
                 continue;
             }
             if (!skipEscape()) {
-                break;
+                return escapes;
             }
             escapes++;
         }
-        int contentEnd = position - 1; // the terminator
-        byte[] content = new byte[contentEnd - contentStart - escapes];
-        int to = 0;
-        for (int from = contentStart; from < contentEnd; from++) {
-            content[to++] = bytes[from];
-            if (bytes[from] == 0x00) {
-                from++; // the 0xFF that follows is not content
+    }
+
+    /** The bytes from {@code from} to {@code to} with each 0x00 0xFF turned back into 0x00. */
+    private byte[] unescape(int from, int to, int escapes) {
+        if (escapes == 0) {
+            return Arrays.copyOfRange(bytes, from, to);
+        }
+        byte[] content = new byte[to - from - escapes];
+        int length = 0;
+        for (int i = from; i < to; i++) {
+            content[length++] = bytes[i];
+            if (bytes[i] == 0x00) {
+                i++; // the 0xFF that follows is not content
             }
         }
         return content;
     }
 
-    /** Elements up to a 0x00 terminator. A 0x00 0xFF in place of an element is a null. */
+    /**
+     * Code 0x05: elements up to a 0x00 terminator, where 0x00 0xFF stands for a null element. The nested tuple's own
+     * packed form is the same bytes with each such null written as a bare 0x00, so it is copied rather than encoded
+     * again.
+     */
     private Tuple readNested() {
+        int contentStart = position;
         List<Object> elements = new ArrayList<>();
+        List<Integer> nullEscapes = new ArrayList<>();
         while (true) {
             if (peekByte() != TypeCode.NULL) {
                 elements.add(readElement());
@@ -102,10 +133,27 @@ final class TupleDecoder {
             }
             position++;
             if (!skipEscape()) {
-                return Tuple.fromCanonical(elements);
+                break;
             }
+            nullEscapes.add(position - 1);
             elements.add(null);
         }
+        int contentEnd = position - 1;
+        return Tuple.fromDecoded(elements, copyWithout(contentStart, contentEnd, nullEscapes));
+    }
+
+    /** The bytes from {@code from} to {@code to}, leaving out those at the given positions, in ascending order. */
+    private byte[] copyWithout(int from, int to, List<Integer> skipped) {
+        byte[] result = new byte[to - from - skipped.size()];
+        int length = 0;
+        int next = from;
+        for (int skip : skipped) {
+            System.arraycopy(bytes, next, result, length, skip - next);
+            length += skip - next;
+            next = skip + 1;
+        }
+        System.arraycopy(bytes, next, result, length, to - next);
+        return result;
     }
 
     /**
@@ -204,16 +252,23 @@ final class TupleDecoder {
         return value;
     }
 
-    private String decodeUtf8(byte[] utf8, int elementStart) {
-        try {
-            return StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(utf8))
-                    .toString();
-        } catch (CharacterCodingException e) {
-            throw error(elementStart, "string is not valid UTF-8");
+    /**
+     * Strict UTF-8. {@code new String} is fast but turns malformed input into U+FFFD, so only when a U+FFFD shows up
+     * are the bytes checked strictly, to tell a genuine U+FFFD from a replacement.
+     */
+    private String decodeUtf8(byte[] utf8, int offset, int length, int elementStart) {
+        String text = new String(utf8, offset, length, StandardCharsets.UTF_8);
+        if (text.indexOf(REPLACEMENT_CHARACTER) >= 0) {
+            try {
+                StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(utf8, offset, length));
+            } catch (CharacterCodingException e) {
+                throw error(elementStart, "string is not valid UTF-8");
+            }
         }
+        return text;
     }
 
     private IllegalArgumentException error(int at, String problem) {

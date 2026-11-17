@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -129,6 +130,36 @@ class TupleEncodingTest {
     @Test
     void rejectsAStringWithAnUnpairedSurrogate() {
         assertThrows(IllegalArgumentException.class, () -> Tuple.of("broken \uD83D"));
+        assertThrows(IllegalArgumentException.class, () -> Tuple.of("broken \uDE00 low"));
+        assertThrows(IllegalArgumentException.class, () -> Tuple.of("\uDE00\uD83D")); // reversed pair
+    }
+
+    @Test
+    void encodesUtf8LikeTheJdk() {
+        String text = "a\u007f\u0080߿ࠀ￿𐀀􏿿";
+        String expected = "02" + HEX.formatHex(text.getBytes(StandardCharsets.UTF_8)) + "00";
+        assertEquals(expected, HEX.formatHex(Tuple.of(text).pack()));
+    }
+
+    @Test
+    void keepsAGenuineReplacementCharacter() {
+        assertEquals("a�b", Tuple.fromBytes(Tuple.of("a�b").pack()).getString(0));
+    }
+
+    @Test
+    void rejectsUtf8ThatTheJdkWouldQuietlyReplace() {
+        assertInvalid("02c0af00", "UTF-8");     // overlong encoding of '/'
+        assertInvalid("02eda08000", "UTF-8");   // a surrogate encoded as UTF-8
+        assertInvalid("02e282", "end of data"); // truncated before its terminator
+        assertInvalid("02e28200", "UTF-8");     // truncated sequence
+    }
+
+    @Test
+    void decodedNestedTupleIsTheSameAsOneBuiltDirectly() {
+        Tuple inner = Tuple.of(null, "a\u0000b", Tuple.of(null, 1), null);
+        Tuple decoded = Tuple.fromBytes(Tuple.of("x", inner, null).pack()).getNestedTuple(1);
+        assertEquals(HEX.formatHex(inner.pack()), HEX.formatHex(decoded.pack()));
+        assertEquals(inner.items(), decoded.items());
     }
 
     @Test

@@ -19,6 +19,14 @@ repository is carried over: this is a rewrite from the specification.
 - `TypeCode`: the type code constants. `package-info.java` documents the wire format in one table.
 - `Versionstamp` (record), `Range` (record with defensive copies): public values.
 
+Efficiency choices, each covered by tests (keep them when changing the code):
+- Strings are encoded to UTF-8 straight into the buffer (space for 3 bytes per char reserved once), and decoded with
+  `new String` directly from the input when they hold no escaped 0x00; the strict UTF-8 check runs only when a U+FFFD
+  appears.
+- A nested tuple without nulls is written by copying its own packed bytes; a decoded nested tuple keeps the bytes it
+  was read from. Neither is encoded twice.
+- The element list of the empty tuple must allow `contains(null)`: no `List.of()` for element lists.
+
 ## Invariants (never violate)
 
 - **Java 17 baseline** (`maven.compiler.release` 17): every class file is Java 17 whatever JDK builds it. CI builds and
@@ -49,6 +57,8 @@ repository is carried over: this is a rewrite from the specification.
 - The FoundationDB reference types are written fully qualified (`com.apple.foundationdb.tuple.Tuple`) to keep them
   apart from ours. Its `getItems()` returns nested tuples as `List`.
 - The random tests use fixed seeds, so a failure reproduces.
+- `ModuleTest` checks the JPMS shape at run time: named module, one exported package, not open, only `java.base`,
+  internals package-private. It fails if the tests ever fall back to the class path.
 
 ## Maven Wrapper
 

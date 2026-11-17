@@ -33,7 +33,7 @@ import java.util.stream.Stream;
  */
 public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
 
-    private static final Tuple EMPTY = new Tuple(List.of(), new byte[0]);
+    private static final Tuple EMPTY = new Tuple(Collections.emptyList(), new byte[0]);
 
     /** Canonical element types only (see {@link #canonicalize(Object)}). Unmodifiable, and may contain null. */
     private final List<Object> elements;
@@ -46,7 +46,7 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
     private Tuple(List<Object> elements, byte[] packed) {
         this.elements = elements;
         this.packed = packed;
-        this.hasIncompleteVersionstamp = elements.stream().anyMatch(Tuple::isOrHoldsIncompleteVersionstamp);
+        this.hasIncompleteVersionstamp = holdsIncompleteVersionstamp(elements);
     }
 
     // --- Creating tuples ---
@@ -87,7 +87,7 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         for (Object item : items) {
             canonical.add(canonicalize(item));
         }
-        return fromCanonical(canonical);
+        return new Tuple(Collections.unmodifiableList(canonical), TupleEncoder.encode(canonical).bytes());
     }
 
     /**
@@ -113,12 +113,11 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
      */
     public static Tuple fromBytes(byte[] bytes, int offset, int length) {
         List<Object> elements = TupleDecoder.decode(bytes, offset, length);
-        return new Tuple(Collections.unmodifiableList(elements), Arrays.copyOfRange(bytes, offset, offset + length));
+        return fromDecoded(elements, Arrays.copyOfRange(bytes, offset, offset + length));
     }
 
-    /** For elements already in canonical form, such as those the decoder produces. */
-    static Tuple fromCanonical(List<Object> elements) {
-        byte[] packed = TupleEncoder.encode(elements).bytes();
+    /** For the decoder: canonical elements and the packed bytes it read them from. */
+    static Tuple fromDecoded(List<Object> elements, byte[] packed) {
         return new Tuple(Collections.unmodifiableList(elements), packed);
     }
 
@@ -386,6 +385,11 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         return elements;
     }
 
+    /** The packed bytes as stored, without copying, for the encoder. */
+    byte[] packedBytes() {
+        return packed;
+    }
+
     // --- Packing ---
 
     /**
@@ -527,11 +531,14 @@ public final class Tuple implements Comparable<Tuple>, Iterable<Object> {
         }
     }
 
-    private static boolean isOrHoldsIncompleteVersionstamp(Object element) {
-        if (element instanceof Versionstamp versionstamp) {
-            return !versionstamp.isComplete();
+    private static boolean holdsIncompleteVersionstamp(List<Object> elements) {
+        for (Object element : elements) {
+            if (element instanceof Versionstamp versionstamp && !versionstamp.isComplete()
+                    || element instanceof Tuple tuple && tuple.hasIncompleteVersionstamp) {
+                return true;
+            }
         }
-        return element instanceof Tuple tuple && tuple.hasIncompleteVersionstamp;
+        return false;
     }
 
     private static Object copyIfArray(Object element) {
