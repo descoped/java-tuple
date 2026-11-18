@@ -12,6 +12,20 @@ the way they are queried, in PostgreSQL 18 and FoundationDB.
 - No runtime dependencies.
 - Immutable, thread-safe values and generators.
 
+## Install
+
+Maven:
+
+```xml
+<dependency>
+    <groupId>io.descoped.tuple</groupId>
+    <artifactId>java-tuple</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+Gradle: `implementation("io.descoped.tuple:java-tuple:0.1.0")`
+
 ## Use
 
 On the module path, require the module:
