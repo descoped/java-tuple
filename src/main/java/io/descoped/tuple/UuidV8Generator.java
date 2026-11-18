@@ -99,7 +99,7 @@ public final class UuidV8Generator {
      *
      * @param uuid a UUIDv8 made by a generator with the same {@code processBits}
      * @return its process number
-     * @throws IllegalArgumentException if {@code uuid} is not a version 8 UUID
+     * @throws IllegalArgumentException if {@code uuid} is not a UUIDv8
      */
     public int processNumber(UUID uuid) {
         return (int) (processAndTag(uuid) >>> tagBits);
@@ -110,7 +110,7 @@ public final class UuidV8Generator {
      *
      * @param uuid a UUIDv8 made by a generator with the same {@code processBits}
      * @return its tag
-     * @throws IllegalArgumentException if {@code uuid} is not a version 8 UUID
+     * @throws IllegalArgumentException if {@code uuid} is not a UUIDv8
      */
     public int tag(UUID uuid) {
         return (int) (processAndTag(uuid) & maxTag());
@@ -118,7 +118,7 @@ public final class UuidV8Generator {
 
     private static long processAndTag(UUID uuid) {
         if (uuid.version() != 8 || uuid.variant() != 2) {
-            throw new IllegalArgumentException("Not an RFC 9562 version 8 UUID: " + uuid);
+            throw new IllegalArgumentException("Not an RFC 9562 UUIDv8: " + uuid);
         }
         return (uuid.getLeastSignificantBits() >>> RANDOM_BITS) & maxValue(PROCESS_AND_TAG_BITS);
     }

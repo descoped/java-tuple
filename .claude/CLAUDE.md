@@ -18,7 +18,7 @@ repository is carried over: this is a rewrite from the specification.
 - `TupleEncoder` / `TupleDecoder`: package-private, one small named method per type code.
 - `UuidV7`, `UuidV7Generator`, `UuidV8Generator`, `TimeUuids`: time-ordered UUID factories and helpers (RFC 9562).
   `MillisecondCounter` (package-private) is the timestamp and counter both generators share. Randomness is always
-  `SecureRandom`; a v8 generator cannot be made without a process number. `TimeUuidTest` covers the layouts, order,
+  `SecureRandom`; a UUIDv8 generator cannot be made without a process number. `TimeUuidTest` covers the layouts, order,
   rollover, a clock going back, and generators kept apart by process number alone.
 - `docs/`: guides on keys that sort the way they are queried (paths, UUIDv7, UUIDv8, UUID generators, FoundationDB
   versionstamps), with `docs/README.md` as the overview: shared principles, terms, and which guide answers what. Every

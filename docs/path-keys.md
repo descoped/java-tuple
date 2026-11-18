@@ -7,8 +7,8 @@ record has a **path**, such as `a/b/a/a`, and the common questions are about par
 `a/b`, the direct children of `a/b`, the record at exactly `a/b/a/a`. Records also move: a subtree is renamed or
 re-parented, and every record in it gets a new path.
 
-Linked Data Store, for one, stored each entity's path as a string together with its packed tuple, and answered subtree
-queries with a range over the packed tuple. This guide describes that pattern. It is one use case among many.
+One way to answer them is to store each record's path twice, as readable text and as a packed tuple, and to answer
+subtree queries with a range over the packed tuple. This guide describes that pattern; it is one use case among many.
 
 ## Goal
 

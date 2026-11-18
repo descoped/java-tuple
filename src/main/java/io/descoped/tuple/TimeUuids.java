@@ -25,24 +25,24 @@ public final class TimeUuids {
     /**
      * The Unix time in milliseconds at the start of a UUIDv7 or a UUIDv8.
      *
-     * @param uuid a version 7 or version 8 UUID
+     * @param uuid a UUIDv7 or UUIDv8
      * @return the 48-bit timestamp
-     * @throws IllegalArgumentException if {@code uuid} is not version 7 or 8 with the RFC 9562 variant
+     * @throws IllegalArgumentException if {@code uuid} is not a UUIDv7 or UUIDv8 with the RFC 9562 variant
      */
     public static long millis(UUID uuid) {
         if (!isTimeOrdered(uuid)) {
-            throw new IllegalArgumentException("Not a version 7 or 8 UUID: " + uuid);
+            throw new IllegalArgumentException("Not a UUIDv7 or UUIDv8: " + uuid);
         }
         return uuid.getMostSignificantBits() >>> 16;
     }
 
     /**
-     * Whether a UUID is version 7 or 8 with the RFC 9562 variant, the versions that put the time first.
+     * Whether a UUID is a UUIDv7 or UUIDv8 with the RFC 9562 variant, the versions that put the time first.
      *
-     * <p>A version 8 UUID from another source may hold anything; this checks the version, not the layout.
+     * <p>A UUIDv8 from another source may hold anything; this checks the version, not the layout.
      *
      * @param uuid the UUID to check
-     * @return {@code true} for version 7 or 8
+     * @return {@code true} for a UUIDv7 or UUIDv8
      */
     public static boolean isTimeOrdered(UUID uuid) {
         return uuid.variant() == RFC_9562_VARIANT && (uuid.version() == VERSION_7 || uuid.version() == VERSION_8);

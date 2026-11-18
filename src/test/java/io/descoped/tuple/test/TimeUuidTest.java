@@ -27,12 +27,12 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The time-ordered UUID factories: {@link UuidV7}, {@link UuidV7Generator}, {@link UuidV8Generator}, {@link TimeUuids}. */
+/** The UUIDv7 and UUIDv8 factories and the helpers for time-ordered UUIDs. */
 class TimeUuidTest {
 
     private static final long T = 1_794_988_874_228L; // 2026-11-18
 
-    // --- UuidV7: all 74 bits random ---
+    // --- UUIDv7 with all 74 free bits random ---
 
     @Test
     void randomV7HasTheLayoutOfRfc9562() {
@@ -63,7 +63,7 @@ class TimeUuidTest {
         assertEquals((1L << 48) - 1, TimeUuids.millis(UuidV7.ofEpochMillis((1L << 48) - 1)));
     }
 
-    // --- UuidV7Generator: counter and 62 random bits ---
+    // --- UUIDv7 with a counter and 62 random bits ---
 
     @Test
     void generatorCountsWithinAMillisecond() {
@@ -131,7 +131,7 @@ class TimeUuidTest {
         assertEquals(80_000, ids.size());
     }
 
-    // --- UuidV8Generator: process number, tag, counter and 32 random bits ---
+    // --- UUIDv8 with a counter, a process number, a tag and 32 random bits ---
 
     @Test
     void v8CarriesProcessNumberAndTag() {
@@ -185,7 +185,7 @@ class TimeUuidTest {
         }
     }
 
-    // --- Order: v7, v8 and the bounds in tuple keys ---
+    // --- Order: UUIDv7, UUIDv8 and the lower bounds in tuple keys ---
 
     @Test
     void v7AndV8SortTogetherByTimeInTupleKeys() {

@@ -18,7 +18,7 @@ After this guide you can:
 ## In short
 
 - Put metadata inside the ID only when it is **small, never changes, and is needed without a lookup**.
-- A UUIDv8 fixes only its version and variant; the layout here keeps v7's timestamp first, so the IDs sort by time,
+- A UUIDv8 fixes only its version and variant; the layout here keeps UUIDv7's timestamp first, so the IDs sort by time,
   together with UUIDv7s.
 - After the timestamp come a counter, a **process number**, a **tag** (the metadata) and random bits. The counter and
   the process number make the IDs unique by construction, so every running generator needs a process number of its
@@ -55,15 +55,15 @@ bits  66–127  custom_c  62
 ```
 
 UUIDv8 (§5.8) is the RFC's format for "experimental or vendor-specific" layouts, and where it sends an embedded node ID
-(§6.4) and any other timestamp source (§6.1). It comes with one condition: a v8's "uniqueness will be implementation
+(§6.4) and any other timestamp source (§6.1). It comes with one condition: a UUIDv8's "uniqueness will be implementation
 specific and MUST NOT be assumed". The layout must provide it.
 
 ## 3. The layout
 
 ```
-bits   0–47   unix_ts_ms      48   milliseconds since 1970, big-endian   (as in v7)
+bits   0–47   unix_ts_ms      48   milliseconds since 1970, big-endian   (as in UUIDv7)
 bits  48–51   ver              4   1000
-bits  52–63   counter         12   per millisecond, from 0               (as v7's method 1)
+bits  52–63   counter         12   per millisecond, from 0               (as UUIDv7's method 1)
 bits  64–65   var              2   10
 bits  66–95   process | tag    30   split by processBits, for example 10 | 20
 bits  96–127  random          32
@@ -71,7 +71,7 @@ bits  96–127  random          32
 
 Each field has one job:
 - The **timestamp** comes first and is big-endian, so comparing IDs as unsigned bytes compares their times first. It
-  is where v7 has it, so v7 and v8 IDs in one column or key space sort together by time.
+  is where UUIDv7 has it, so UUIDv7 and UUIDv8 IDs in one column or key space sort together by time.
 - The **counter** numbers the IDs one generator makes within a millisecond, up to 4096, in creation order.
 - The **process number** tells generators apart: the RFC's node ID (§6.4). `processBits` sets its width, 1 to 30.
 - The **tag** is the metadata, in the bits the process number leaves: with 10 for the process, 20 bits.
@@ -109,13 +109,13 @@ int region = generator.tag(id);
 - Up to 4096 IDs per millisecond; the next one waits for the following millisecond, so the timestamp is never ahead of
   the clock. If the clock goes back, the generator keeps its last timestamp and counts on, so IDs never decrease.
 - `processNumber(id)` and `tag(id)` read IDs made with the same `processBits`, by any generator.
-- The JDK has no v8 factory in any version, by design: the bits belong to the application. A layout of your own is a
+- The JDK has no UUIDv8 factory in any version, by design: the bits belong to the application. A layout of your own is a
   few lines with `new UUID(msb, lsb)`; [UUID generators](uuid-generators.md#5-writing-your-own-generator) has a
   checklist.
 
 ## 6. Time windows in tuple keys
 
-In a tuple, a v8 is a `UUID` like any other: type code `0x30` followed by its 16 bytes. Within one prefix the keys sort
+In a tuple, a UUIDv8 is a `UUID` like any other: type code `0x30` followed by its 16 bytes. Within one prefix the keys sort
 by time, and a time window is a range from the lower bound of its start to the lower bound of its end:
 
 ```java
@@ -129,8 +129,8 @@ byte[] end = events.add(TimeUuids.lowerBound(to)).pack();       // exclusive
 ## 7. PostgreSQL 18
 
 PostgreSQL compares `uuid` values as unsigned bytes, whatever their version, so these IDs sort by time in indexes and
-`ORDER BY`, together with UUIDv7s. `uuid_extract_version(id)` returns 8. What PostgreSQL does not do is read a v8's
-fields: `uuid_extract_timestamp(id)` handles only v1 and v7 and returns `NULL` for v8. A few functions fill the gap.
+`ORDER BY`, together with UUIDv7s. `uuid_extract_version(id)` returns 8. What PostgreSQL does not do is read a UUIDv8's
+fields: `uuid_extract_timestamp(id)` handles only UUIDv1 and UUIDv7 and returns `NULL` for UUIDv8. A few functions fill the gap.
 
 ### Functions
 

@@ -56,12 +56,12 @@ collision and the harder an ID is to guess:
 
 | Form                                   | Random bits | Order within a millisecond      |
 |----------------------------------------|-------------|---------------------------------|
-| `UUID.randomUUID()` (v4), for reference | 122        | none, and no time order at all  |
+| `UUID.randomUUID()` (UUIDv4), for reference | 122        | none, and no time order at all  |
 | `UuidV7.random()`                      | 74          | random                          |
 | `UuidV7Generator`                      | 62          | creation order, per generator   |
 | `UuidV8Generator`                      | 32          | creation order, per generator   |
 
-`UuidV7.random()` is the most a v7 can hold. The generators trade random bits for order, and in the v8 case for
+`UuidV7.random()` is the most a UUIDv7 can hold. The generators trade random bits for order, and in the UUIDv8 case for
 uniqueness by construction instead of by chance.
 
 ## 3. The odds of a collision
@@ -151,15 +151,15 @@ process number.
   stalls a busy generator until then; `UuidV7.random()` does not stall, but its IDs then sort before the ones already
   made.
 - **More than 4096 IDs in one millisecond** from one generator: the next one waits for the following millisecond. At
-  that rate, use several generators (each with its own process number, for v8).
+  that rate, use several generators (each with its own process number, for UUIDv8).
 - **The timestamp is 48 bits of Unix milliseconds**, valid from 1970 to the year 10889. A clock outside that range is
   an error, not a wrap-around.
 
 ### IDs are not secrets
 
-Anyone who sees an ID can read when it was made, and for a v8, its process number and tag. Someone who has seen one v8
+Anyone who sees an ID can read when it was made, and for a UUIDv8, its process number and tag. Someone who has seen one UUIDv8
 ID knows everything about its neighbours except 32 random bits: about four billion guesses, within reach of a
-determined attacker. RFC 9562 §8 says not to use UUIDs as security capabilities; for v8 that is a hard rule. Check
+determined attacker. RFC 9562 §8 says not to use UUIDs as security capabilities; for UUIDv8 that is a hard rule. Check
 access to the thing an ID names; never treat knowing the ID as permission.
 
 ### Bounds are not IDs
@@ -169,7 +169,7 @@ access to the thing an ID names; never treat knowing the ID as permission.
 
 ### Sorting in Java
 
-`UUID.compareTo` compares the two halves as signed longs. For v7 and v8 IDs and their bounds it agrees with the byte
+`UUID.compareTo` compares the two halves as signed longs. For UUIDv7 and UUIDv8 IDs and their bounds it agrees with the byte
 order until the year 6429, but not for UUIDs in general. Sort with `TimeUuids.compare`, or by packed tuples, which is
 the order of tuple keys and of PostgreSQL.
 
@@ -187,19 +187,19 @@ Measured on a laptop, one thread:
 A generator that is asked for more than 4096 IDs in a millisecond waits for the next one; a tight loop runs at exactly
 that limit, 244 ns per ID. Below it, the cost of an ID is the read from `SecureRandom`. Under heavy concurrency the
 lock and the shared `SecureRandom` become the limit; measure first, then give each thread its own generator (with its
-own process number, for v8).
+own process number, for UUIDv8).
 
 ## 5. Writing your own generator
 
 You are encouraged to, when the factories do not fit: another split of the bits, a counter seeded randomly, sub-
 millisecond time (RFC 9562 method 3), or an ID scheme of your own. Check it against this list:
 
-1. **Version and variant.** Set the four version bits (0111 for v7, 1000 for v8) and the two variant bits (10). Only
+1. **Version and variant.** Set the four version bits (0111 for UUIDv7, 1000 for UUIDv8) and the two variant bits (10). Only
    then do PostgreSQL's `uuid_extract_version` and Java's `UUID.version()` report it correctly.
-2. **Compliance.** A v7's free bits are for randomness and ordering only (RFC 9562 §5.7, §6.2). Anything else, a node
-   number or application data, makes it a v8 (§6.4, §5.8).
+2. **Compliance.** A UUIDv7's free bits are for randomness and ordering only (RFC 9562 §5.7, §6.2). Anything else, a node
+   number or application data, makes it a UUIDv8 (§6.4, §5.8).
 3. **Time first, big-endian.** Keep the 48-bit Unix milliseconds in bits 0–47 if the IDs should sort by time and
-   together with other v7 and v8 IDs.
+   together with other UUIDv7 and UUIDv8 IDs.
 4. **Uniqueness by construction where you can.** A counter within a process and a unique number per process cost few
    bits and remove whole classes of collisions; randomness covers the rest. Work out the odds for your load with the
    formulas above.
