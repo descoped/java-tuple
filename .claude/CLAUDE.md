@@ -16,6 +16,9 @@ repository is carried over: this is a rewrite from the specification.
 
 - `Tuple`: the public, immutable value. Normalizes input (`canonicalize`), packs eagerly, holds the packed bytes.
 - `TupleEncoder` / `TupleDecoder`: package-private, one small named method per type code.
+- `docs/`: guides on time-ordered keys (UUIDv7, UUIDv8, FoundationDB versionstamps), linked from `README.md`. Their
+  Java must compile on Java 17 against the current API, and their SQL must run on PostgreSQL 18; check both when the
+  API or a guide changes.
 - `TypeCode`: the type code constants. `package-info.java` documents the wire format in one table.
 - `Versionstamp` (record), `Range` (record with defensive copies): public values.
 

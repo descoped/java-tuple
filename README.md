@@ -70,6 +70,17 @@ problem: a missing terminator, a truncated value, an unknown type code, a string
 than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested deeper than
 that is rejected too, so the library never writes bytes it will not read back.
 
+## Guides
+
+Time-ordered keys that carry metadata (a tenant, a path, an entity type), three ways:
+
+- [UUIDv7](docs/uuidv7-metadata.md): a standard UUIDv7 with the metadata in front of it in the key. The usual choice.
+- [UUIDv8](docs/uuidv8-metadata.md): the metadata inside the ID, for IDs that travel on their own.
+- [Versionstamps](docs/foundationdb-versionstamp.md): the FoundationDB way, ordered by commit.
+
+Each guide covers tuple keys in Java and, for the UUIDs, PostgreSQL 18. The ID generators in them are examples to copy;
+java-tuple encodes UUIDs and versionstamps but does not generate them.
+
 ## Compatibility
 
 The tests compare every encoding with the FoundationDB Java client (`org.foundationdb:fdb-java`, test scope only):
