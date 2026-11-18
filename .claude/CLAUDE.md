@@ -57,7 +57,8 @@ Efficiency choices, each covered by tests (keep them when changing the code):
 - **Readability first.** The point of the rewrite was code that can be followed against the specification: small named
   methods, codes as unsigned ints, comments that explain the format. Performance work must not undo that.
 - **Publishing.** CI publishes nothing: no SNAPSHOTs and never a release. Releases go through the Central Portal
-  (profiles `central,sign`) from the owner's machine, only with the owner's approval.
+  (profiles `central,sign`) from the owner's machine, only with the owner's approval. After a release is on
+  Maven Central, update the version in the README's Install section.
 
 ## Testing
 
