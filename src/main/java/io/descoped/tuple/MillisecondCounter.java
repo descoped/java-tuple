@@ -1,6 +1,8 @@
 package io.descoped.tuple;
 
 import java.time.InstantSource;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * The timestamp and counter of a time-ordered UUID generator: the first 64 bits of a UUIDv7 made by RFC 9562 method 1,
@@ -8,7 +10,8 @@ import java.time.InstantSource;
  *
  * <p>Successive values strictly increase. Within one millisecond the 12-bit counter numbers them; when it is used up,
  * the counter waits for the clock to reach the next millisecond, so the timestamp is never ahead of the clock. If the
- * clock goes back, the counter keeps the last timestamp and counts on.
+ * clock goes back, the counter keeps the last timestamp and counts on; once the counter is used up, it sleeps until the
+ * clock has caught up.
  *
  * <p>Not thread-safe: the generators that use it synchronize.
  */
@@ -45,11 +48,16 @@ final class MillisecondCounter {
     }
 
     private long waitForMillisAfter(long millis) {
-        long now;
-        do {
-            Thread.onSpinWait();
+        long now = currentMillis();
+        while (now <= millis) {
+            long behind = millis - now; // 0 when the counter ran out within the current millisecond
+            if (behind > 0) {
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(behind)); // the clock went back: sleep, don't spin
+            } else {
+                Thread.onSpinWait();
+            }
             now = currentMillis();
-        } while (now <= millis);
+        }
         return now;
     }
 

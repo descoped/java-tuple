@@ -24,6 +24,10 @@ import java.util.UUID;
  *
  * <p>Use one generator per process. The split between process number and tag is part of the format: choose it once
  * and never change it for IDs already issued. Thread-safe.
+ *
+ * <p>If the clock goes back, the generator keeps its last timestamp and counts on, so IDs never decrease. After 4096
+ * such IDs it waits, holding its lock, until the clock has caught up: a clock stepped back by a minute can stall a busy
+ * generator, and every thread that uses it, for up to that minute.
  */
 public final class UuidV8Generator {
 

@@ -13,6 +13,10 @@ import java.util.UUID;
  * back. Up to 4096 UUIDs per millisecond; the next one waits for the clock to reach the following millisecond, so the
  * timestamp is never ahead of the clock. Use one generator per process. Thread-safe.
  *
+ * <p>If the clock goes back, the generator keeps its last timestamp and counts on, so IDs never decrease. After 4096
+ * such IDs it waits, holding its lock, until the clock has caught up: a clock stepped back by a minute can stall a busy
+ * generator, and every thread that uses it, for up to that minute.
+ *
  * <p>The counter costs 12 random bits: 62 remain, against 74 in {@link UuidV7#random()}. Generators in different
  * processes are kept apart by those 62 bits alone.
  */

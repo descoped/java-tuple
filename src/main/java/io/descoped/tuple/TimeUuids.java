@@ -69,7 +69,13 @@ public final class TimeUuids {
      * @throws IllegalArgumentException if the instant is before 1970 or after the year 10889
      */
     public static UUID lowerBound(Instant instant) {
-        return lowerBound(instant.toEpochMilli());
+        long millis;
+        try {
+            millis = instant.toEpochMilli();
+        } catch (ArithmeticException tooFarFromEpoch) {
+            throw new IllegalArgumentException("Outside the 48-bit Unix time of a UUID: " + instant, tooFarFromEpoch);
+        }
+        return lowerBound(millis);
     }
 
     /**

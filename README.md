@@ -78,7 +78,7 @@ byte[] key = Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(
 
 UUIDv7 and UUIDv8 start with a millisecond timestamp, so in a tuple key (and in PostgreSQL) they sort by the time they
 were made. java-tuple has small factories for them; use them, or build your own strategy. On JDK 26 and later,
-`UUID.ofEpochMillis` makes the same random UUIDv7 as `UuidV7.random()`; the generators and `TimeUuids` have no JDK
+`UUID.ofEpochMillis` makes the same UUIDv7 as `UuidV7.ofEpochMillis`; the generators and `TimeUuids` have no JDK
 counterpart.
 
 ```java
@@ -100,9 +100,9 @@ Every running `UuidV8Generator` needs a process number of its own: that is what 
 ### Malformed input
 
 `Tuple.fromBytes` throws `IllegalArgumentException` for anything that is not a valid encoding, with the offset of the
-problem: a missing terminator, a truncated value, an unknown type code, a string that is not UTF-8, or tuples nested more
-than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested deeper than
-that is rejected too, so the library never writes bytes it will not read back.
+problem: a missing terminator, a truncated value, an unknown type code, a string that is not UTF-8, or tuples nested
+more than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested
+deeper than that is rejected too, so the library never writes bytes it will not read back.
 
 ## Guides
 

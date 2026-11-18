@@ -118,7 +118,7 @@ each make `m` IDs per millisecond, two IDs collide only with the same millisecon
 |----------------------------------------------|------------------------------|
 | 2 processes, 1 ID per millisecond each       | 7 × 10⁻⁹                     |
 | 10 processes, 1 million per second in total  | 3 × 10⁻⁵                     |
-| 100 processes, 100 million per second in total | 3 × 10⁻³                   |
+| 100 processes, 100 million per second in total | 3 × 10⁻², once in about 30 years |
 
 Negligible, though higher than random-only at the same load: the counters make every generator use the low values
 first, so IDs meet on them more often than fully random bits would.
@@ -186,8 +186,8 @@ process number.
 
 ### IDs are not secrets
 
-Anyone who sees an ID can read when it was made, and for a UUIDv8, its process number and tag. Someone who has seen one UUIDv8
-ID knows everything about its neighbours except 32 random bits: about four billion guesses, within reach of a
+Anyone who sees an ID can read when it was made, and for a UUIDv8, its process number and tag. Someone who has seen one
+UUIDv8 ID knows everything about its neighbours except 32 random bits: about four billion guesses, within reach of a
 determined attacker. RFC 9562 §8 says not to use UUIDs as security capabilities; for UUIDv8 that is a hard rule. Check
 access to the thing an ID names; never treat knowing the ID as permission.
 
@@ -198,9 +198,9 @@ access to the thing an ID names; never treat knowing the ID as permission.
 
 ### Sorting in Java
 
-`UUID.compareTo` compares the two halves as signed longs. For UUIDv7 and UUIDv8 IDs and their bounds it agrees with the byte
-order until the year 6429, but not for UUIDs in general. Sort with `TimeUuids.compare`, or by packed tuples, which is
-the order of tuple keys and of PostgreSQL.
+`UUID.compareTo` compares the two halves as signed longs. For UUIDv7 and UUIDv8 IDs and their bounds it agrees with the
+byte order until the year 6429, but not for UUIDs in general. Sort with `TimeUuids.compare`, or by packed tuples, which
+is the order of tuple keys and of PostgreSQL.
 
 ### Throughput
 
@@ -223,10 +223,10 @@ own process number, for UUIDv8).
 You are encouraged to, when the factories do not fit: another split of the bits, a counter seeded randomly, sub-
 millisecond time (RFC 9562 method 3), or an ID scheme of your own. Check it against this list:
 
-1. **Version and variant.** Set the four version bits (0111 for UUIDv7, 1000 for UUIDv8) and the two variant bits (10). Only
-   then do PostgreSQL's `uuid_extract_version` and Java's `UUID.version()` report it correctly.
-2. **Compliance.** A UUIDv7's free bits are for randomness and ordering only (RFC 9562 §5.7, §6.2). Anything else, a node
-   number or application data, makes it a UUIDv8 (§6.4, §5.8).
+1. **Version and variant.** Set the four version bits (0111 for UUIDv7, 1000 for UUIDv8) and the two variant bits (10).
+   Only then do PostgreSQL's `uuid_extract_version` and Java's `UUID.version()` report it correctly.
+2. **Compliance.** A UUIDv7's free bits are for randomness and ordering only (RFC 9562 §5.7, §6.2). Anything else, a
+   node number or application data, makes it a UUIDv8 (§6.4, §5.8).
 3. **Time first, big-endian.** Keep the 48-bit Unix milliseconds in bits 0–47 if the IDs should sort by time and
    together with other UUIDv7 and UUIDv8 IDs.
 4. **Uniqueness by construction where you can.** A counter within a process and a unique number per process cost few

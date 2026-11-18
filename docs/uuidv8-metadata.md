@@ -71,7 +71,9 @@ bits  96–127  random          32
 
 Each field has one job:
 - The **timestamp** comes first and is big-endian, so comparing IDs as unsigned bytes compares their times first. It
-  is where UUIDv7 has it, so UUIDv7 and UUIDv8 IDs in one column or key space sort together by time.
+  is where UUIDv7 has it, so UUIDv7 and UUIDv8 IDs in one column or key space sort together by time. Within one
+  millisecond, every UUIDv7 sorts before every UUIDv8, whatever order they were made in: the version bits come before
+  the counter.
 - The **counter** numbers the IDs one generator makes within a millisecond, up to 4096, in creation order.
 - The **process number** tells generators apart: the RFC's node ID (§6.4). `processBits` sets its width, 1 to 30.
 - The **tag** is the metadata, in the bits the process number leaves: with 10 for the process, 20 bits.
@@ -115,8 +117,8 @@ int region = generator.tag(id);
 
 ## 6. Time windows in tuple keys
 
-In a tuple, a UUIDv8 is a `UUID` like any other: type code `0x30` followed by its 16 bytes. Within one prefix the keys sort
-by time, and a time window is a range from the lower bound of its start to the lower bound of its end:
+In a tuple, a UUIDv8 is a `UUID` like any other: type code `0x30` followed by its 16 bytes. Within one prefix the keys
+sort by time, and a time window is a range from the lower bound of its start to the lower bound of its end:
 
 ```java
 Tuple events = Tuple.of("events");
@@ -130,7 +132,8 @@ byte[] end = events.add(TimeUuids.lowerBound(to)).pack();       // exclusive
 
 PostgreSQL compares `uuid` values as unsigned bytes, whatever their version, so these IDs sort by time in indexes and
 `ORDER BY`, together with UUIDv7s. `uuid_extract_version(id)` returns 8. What PostgreSQL does not do is read a UUIDv8's
-fields: `uuid_extract_timestamp(id)` handles only UUIDv1 and UUIDv7 and returns `NULL` for UUIDv8. A few functions fill the gap.
+fields: `uuid_extract_timestamp(id)` handles only UUIDv1 and UUIDv7 and returns `NULL` for UUIDv8. A few functions fill
+the gap.
 
 ### Functions
 

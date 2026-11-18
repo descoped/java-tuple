@@ -106,6 +106,23 @@ class TimeUuidTest {
     }
 
     @Test
+    void generatorWaitsForAClockThatWentBackToCatchUp() {
+        // The first ID at T, then the clock is 3 ms behind until the 4100th reading, then past T
+        AtomicLong readings = new AtomicLong();
+        InstantSource clock = () -> {
+            long reading = readings.incrementAndGet();
+            return Instant.ofEpochMilli(reading == 1 ? T : reading < 4100 ? T - 3 : T + 1);
+        };
+        UuidV7Generator generator = new UuidV7Generator(clock, new SecureRandom());
+
+        List<UUID> ids = generate(generator, 4097);
+
+        assertEquals(T, TimeUuids.millis(ids.get(4095)), "counts on at the last timestamp");
+        assertEquals(T + 1, TimeUuids.millis(ids.get(4096)), "then waits until the clock has caught up");
+        assertStrictlyIncreasing(ids);
+    }
+
+    @Test
     void generatorRejectsAClockOutside48Bits() {
         UuidV7Generator generator = new UuidV7Generator(fixedClock(-1), new SecureRandom());
         assertThrows(IllegalStateException.class, generator::next);
@@ -216,6 +233,8 @@ class TimeUuidTest {
         }
         assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(-1));
         assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(1L << 48));
+        assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(Instant.MAX));
+        assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(Instant.EPOCH.minusMillis(1)));
     }
 
     @Test

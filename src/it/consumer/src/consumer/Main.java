@@ -9,7 +9,8 @@ import java.util.Arrays;
 import java.util.UUID;
 
 /**
- * Uses the library as an application would: pack a key, decode it, check the order, pack with a versionstamp, and make a UUIDv7.
+ * Uses the library as an application would: pack a key, decode it, check the order, pack with a versionstamp, and make
+ * a UUIDv7.
  */
 public final class Main {
 

@@ -61,8 +61,8 @@ Without one of the three methods, IDs made in the same millisecond sort in rando
 
 Nothing else belongs there. The RFC sends the nearest cases to UUIDv8: an embedded node or machine ID "SHOULD utilize
 UUIDv8" (§6.4), and another timestamp source or epoch means "UUIDv8 MUST be used" (§6.1). Application data is not
-provided for at all, and §6.12 asks readers to treat UUIDs as opaque: a system that reads a UUIDv7 may assume the bits are
-random.
+provided for at all, and §6.12 asks readers to treat UUIDs as opaque: a system that reads a UUIDv7 may assume the bits
+are random.
 
 ## 3. Where the metadata goes: the key
 
@@ -218,8 +218,8 @@ try (PreparedStatement query = connection.prepareStatement(
   twice the space, and its order depends on the collation.
 - **Never store a lower bound as an ID.** It has version 0; `TimeUuids.isTimeOrdered` rejects it.
 - **Sort UUIDs in Java with `TimeUuids.compare`** or by packed tuples. `UUID.compareTo` compares signed longs
-  (JDK-7025832, kept for compatibility); for UUIDv7 IDs and lower bounds it agrees with the byte order until the year 6429,
-  but not for UUIDs in general.
+  (JDK-7025832, kept for compatibility); for UUIDv7 IDs and lower bounds it agrees with the byte order until the year
+  6429, but not for UUIDs in general.
 - **Time order across machines is as good as their clocks.** Within one `UuidV7Generator` IDs strictly increase;
   across machines, keep clocks in sync. See [UUID generators](uuid-generators.md#the-clock).
 
