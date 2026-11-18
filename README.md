@@ -5,11 +5,22 @@ values, and unpack them again. The encoding is byte-for-byte compatible with the
 [FoundationDB tuple layer](https://github.com/apple/foundationdb/blob/main/design/tuple.md), so keys written here can be
 read by any FoundationDB client and the other way round.
 
+It also has small factories for time-ordered UUIDs (UUIDv7 and UUIDv8), and [guides](docs/README.md) on keys that sort
+the way they are queried, in PostgreSQL 18 and FoundationDB.
+
 - Java 17 or later, a JPMS module (`io.descoped.tuple`) that also works on the class path.
 - No runtime dependencies.
-- Immutable, thread-safe values.
+- Immutable, thread-safe values and generators.
 
 ## Use
+
+On the module path, require the module:
+
+```java
+module my.app {
+    requires io.descoped.tuple;
+}
+```
 
 ```java
 import io.descoped.tuple.Tuple;
@@ -121,6 +132,7 @@ versionstamp, length-prefixed bytes) and user types `0x40`–`0x4f`.
 ```sh
 ./mvnw verify                    # compile with -Xlint:all -Werror, tests on the module path (JUnit 6)
 ./mvnw verify javadoc:javadoc    # plus Javadoc with doclint, warnings fail the build
+./mvnw verify -P coverage        # JaCoCo report in target/site/jacoco
 src/it/consumer/run.sh           # after package: a separate named module uses the jar, module path and class path
 ```
 
