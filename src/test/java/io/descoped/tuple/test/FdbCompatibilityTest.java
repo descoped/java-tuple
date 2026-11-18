@@ -92,7 +92,8 @@ class FdbCompatibilityTest {
 
     /**
      * Like the reference, a decoded tuple keeps non-canonical bytes as they came at the top level. Nested in another
-     * tuple, it is encoded afresh. Two deliberate differences from fdb-java 8.0.0, for input no encoder writes:
+     * tuple, it is encoded afresh. Two deliberate differences from fdb-java, for input no encoder writes (the test
+     * builds its expectation without relying on either):
      * <ul>
      *   <li>When nesting such a tuple, the reference pads its fresh encoding with zero bytes up to the original
      *       length, which reads back as extra nulls ({@code 160005} nested comes back as {@code [[5], null]}).
