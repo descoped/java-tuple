@@ -78,90 +78,27 @@ within it by time, oldest first. In return for one extra key element:
 
 PostgreSQL does the same with columns: a primary key of `(tenant_id, path, id)`, see [section 6](#6-postgresql-18).
 
-## 4. Generating UUIDv7 on Java 17
+## 4. Generating UUIDv7
 
-The JDK creates v7 UUIDs from JDK 26 on, with `UUID.ofEpochMillis(long)`. On Java 17 you write the generator yourself.
-There are two compliant forms:
+The JDK creates v7 UUIDs from JDK 26 on, with `UUID.ofEpochMillis(long)`. On Java 17, java-tuple has two compliant
+factories:
 
-| Form                          | `rand_a`           | `rand_b`  | Order within a millisecond  |
-|-------------------------------|--------------------|-----------|-----------------------------|
-| Random only (as the JDK does) | 12 random bits     | 62 random | random                      |
-| Counter (method 1, below)     | 12-bit counter     | 62 random | creation order, per process |
-
-The counter form costs nothing extra and keeps IDs from one process strictly increasing, so a process reads its own
-writes back in the order it made them:
+| Factory                  | `rand_a`        | `rand_b`  | Order within a millisecond   |
+|--------------------------|-----------------|-----------|------------------------------|
+| `UuidV7.random()`        | 12 random bits  | 62 random | random                       |
+| `UuidV7Generator.next()` | 12-bit counter (method 1) | 62 random | creation order, per generator |
 
 ```java
-import java.security.SecureRandom;
-import java.util.UUID;
+UUID id = UuidV7.random();                         // the default: no state, 74 random bits
 
-/** RFC 9562 UUIDv7: 48-bit Unix milliseconds, a 12-bit counter (method 1) and 62 random bits. */
-public final class UuidV7 {
-
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final long VERSION_7 = 0x7000L;                       // in the most significant long
-    private static final long VARIANT = 0x8000_0000_0000_0000L;          // 10 in the top bits of the least significant long
-    private static final long RAND_B = 0x3FFF_FFFF_FFFF_FFFFL;
-    private static final int MAX_COUNTER = 0xFFF;
-
-    private static long lastMillis = -1;
-    private static int counter;
-
-    private UuidV7() {
-    }
-
-    public static synchronized UUID next() {
-        long now = System.currentTimeMillis();
-        if (now > lastMillis) {
-            lastMillis = now;
-            counter = 0;
-        } else if (counter < MAX_COUNTER) {
-            counter++;                                // same millisecond, or the clock went back
-        } else {
-            lastMillis = waitForNextMillisecond();    // 4096 used: rollover, §6.2
-            counter = 0;
-        }
-        long msb = (lastMillis << 16) | VERSION_7 | counter;
-        long lsb = VARIANT | (RANDOM.nextLong() & RAND_B);
-        return new UUID(msb, lsb);
-    }
-
-    /** The Unix milliseconds in the first 48 bits. */
-    public static long millis(UUID uuid) {
-        return uuid.getMostSignificantBits() >>> 16;
-    }
-
-    /**
-     * The smallest 128-bit value of a millisecond: every ID made at {@code millis} or later sorts at or after it.
-     * A bound for range queries, never an ID: its version is 0.
-     */
-    public static UUID lowerBound(long millis) {
-        return new UUID(millis << 16, 0L);
-    }
-
-    private static long waitForNextMillisecond() {
-        long now;
-        do {
-            Thread.onSpinWait();
-            now = System.currentTimeMillis();
-        } while (now <= lastMillis);
-        return now;
-    }
-}
+UuidV7Generator generator = new UuidV7Generator(); // one per process
+UUID next = generator.next();                      // always sorts after the one before
 ```
 
-How it behaves:
-- **Up to 4096 IDs per millisecond** are numbered by the counter. The 4097th waits for the next millisecond, so the
-  timestamp is never ahead of the clock. (§6.2 also allows moving the timestamp ahead instead, which never blocks but
-  lets IDs drift ahead of real time under load.)
-- **If the clock goes back**, the generator keeps the last timestamp and counts on, so IDs never decrease. After 4096
-  such IDs it waits for the clock to catch up.
-- **Across processes** nothing is coordinated. Two IDs collide only when two processes make them in the same
-  millisecond, with the same counter value, and draw the same 62 random bits: for two processes, a chance of 1 in 2⁶²
-  (about 2 × 10⁻¹⁹) per such millisecond. The random-only form is similar: n IDs in one millisecond collide with a
-  chance of about n² / 2⁷⁵.
-- **Cost**: one `SecureRandom.nextLong()` per ID, about 140 ns on a laptop, the same as `UUID.randomUUID()`. Under
-  heavy concurrency the lock and the shared `SecureRandom` become the limit; measure before tuning.
+Use `UuidV7.random()` unless a process must read its own IDs back in exactly the order it made them; then use one
+`UuidV7Generator` per process. Both are unique without coordination: at a million IDs per second, a collision is
+expected about once in a million years. [UUID generators](uuid-generators.md) has the odds for other loads, the
+precautions (randomness, clocks, snapshots), and a checklist for writing a generator of your own.
 
 ## 5. Tuple keys in Java
 
@@ -172,13 +109,14 @@ the start to the lower bound of the end:
 ```java
 Tuple orders = Tuple.of("events", tenantId, "orders");
 
-byte[] begin = orders.add(UuidV7.lowerBound(from.toEpochMilli())).pack();   // inclusive
-byte[] end = orders.add(UuidV7.lowerBound(to.toEpochMilli())).pack();       // exclusive
+byte[] begin = orders.add(TimeUuids.lowerBound(from)).pack();   // inclusive
+byte[] end = orders.add(TimeUuids.lowerBound(to)).pack();       // exclusive
 ```
 
-`UUID.compareTo` compares the two halves as signed longs (JDK-7025832, kept for compatibility). For v7 IDs and these
-bounds it happens to agree with the byte order until the year 6429, but not for UUIDs in general. When order matters,
-compare packed tuples (`Tuple.compareTo`) or each half with `Long.compareUnsigned`.
+`TimeUuids.lowerBound` returns a UUID of version 0: a bound, never an ID. To sort UUIDs in Java, use
+`TimeUuids.compare` or packed tuples. `UUID.compareTo` compares the two halves as signed longs (JDK-7025832, kept for
+compatibility); for v7 IDs and these bounds it happens to agree with the byte order until the year 6429, but not for
+UUIDs in general.
 
 ## 6. PostgreSQL 18
 
@@ -215,7 +153,7 @@ try (PreparedStatement insert = connection.prepareStatement(
         "INSERT INTO event (tenant_id, path, id, payload) VALUES (?, ?, ?, ?::jsonb)")) {
     insert.setLong(1, tenantId);
     insert.setString(2, "orders");
-    insert.setObject(3, UuidV7.next());
+    insert.setObject(3, UuidV7.random());
     insert.setString(4, json);
     insert.executeUpdate();
 }
@@ -226,7 +164,7 @@ try (PreparedStatement insert = connection.prepareStatement(
 A time window needs the same lower bound as in Java. This function builds it from a timestamp:
 
 ```sql
--- The smallest uuid of a point in time, for range bounds (UuidV7.lowerBound in Java). Never an ID.
+-- The smallest uuid of a point in time, for range bounds (TimeUuids.lowerBound in Java). Never an ID.
 CREATE FUNCTION uuid_bound(at timestamptz) RETURNS uuid
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     RETURN (lpad(to_hex(floor(extract(epoch FROM at) * 1000)::bigint), 12, '0') || repeat('0', 20))::uuid;
@@ -252,15 +190,15 @@ index in order (backward for the latest) and stops early; when few rows match, i
 which is then just as cheap. The bounds are constants, so no function runs per row; avoid
 `WHERE uuid_extract_timestamp(id) BETWEEN ...`, which cannot use the index.
 
-From Java, the bounds come from `UuidV7.lowerBound`:
+From Java, the bounds come from `TimeUuids.lowerBound`:
 
 ```java
 try (PreparedStatement query = connection.prepareStatement(
         "SELECT id, payload FROM event WHERE tenant_id = ? AND path = ? AND id >= ? AND id < ? ORDER BY id")) {
     query.setLong(1, tenantId);
     query.setString(2, "orders");
-    query.setObject(3, UuidV7.lowerBound(from.toEpochMilli()));
-    query.setObject(4, UuidV7.lowerBound(to.toEpochMilli()));
+    query.setObject(3, TimeUuids.lowerBound(from));
+    query.setObject(4, TimeUuids.lowerBound(to));
     try (ResultSet rows = query.executeQuery()) {
         while (rows.next()) {
             UUID id = rows.getObject("id", UUID.class);

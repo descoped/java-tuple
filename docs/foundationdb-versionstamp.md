@@ -111,7 +111,7 @@ for (KeyValue kv : oldest) {
 
 |                         | Versionstamp (FoundationDB)      | UUIDv7, metadata in the key        | UUIDv8, metadata in the ID          |
 |-------------------------|----------------------------------|------------------------------------|-------------------------------------|
-| Made by                 | the database, at commit          | the client                         | the client                          |
+| Made by                 | the database, at commit          | the client: `UuidV7`               | the client: `UuidV8Generator`       |
 | Order                   | commit order, cluster-wide       | each client's clock, to the ms     | each client's clock, to the ms      |
 | Unique by               | the database, guaranteed         | 62 to 74 random bits               | a counter, plus a process number in the tag |
 | Known before the write  | no                               | yes                                | yes                                 |

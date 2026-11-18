@@ -63,6 +63,27 @@ little-endian integer, the format `SET_VERSIONSTAMPED_KEY` expects from API vers
 byte[] key = Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(subspacePrefix);
 ```
 
+### Time-ordered UUIDs
+
+UUIDv7 and UUIDv8 start with a millisecond timestamp, so in a tuple key (and in PostgreSQL) they sort by the time they
+were made. java-tuple has small factories for them; use them, or build your own strategy.
+
+```java
+UUID id = UuidV7.random();                          // 74 random bits, no state
+
+UuidV7Generator ordered = new UuidV7Generator();    // one per process: strictly increasing IDs
+UUID next = ordered.next();
+
+UuidV8Generator tagged = new UuidV8Generator(10, processNumber);   // metadata inside the ID
+UUID routed = tagged.next(tenantNumber);                           // tagged.tag(routed) == tenantNumber
+
+UUID from = TimeUuids.lowerBound(Instant.parse("2026-11-18T10:00:00Z"));   // range bounds, never IDs
+UUID to = TimeUuids.lowerBound(Instant.parse("2026-11-18T11:00:00Z"));
+Range hour = new Range(Tuple.of("events", from).pack(), Tuple.of("events", to).pack());
+```
+
+Every running `UuidV8Generator` needs a process number of its own: that is what makes its IDs unique.
+
 ### Malformed input
 
 `Tuple.fromBytes` throws `IllegalArgumentException` for anything that is not a valid encoding, with the offset of the
@@ -78,8 +99,9 @@ Time-ordered keys that carry metadata (a tenant, a path, an entity type), three 
 - [UUIDv8](docs/uuidv8-metadata.md): the metadata inside the ID, for IDs that travel on their own.
 - [Versionstamps](docs/foundationdb-versionstamp.md): the FoundationDB way, ordered by commit.
 
-Each guide covers tuple keys in Java and, for the UUIDs, PostgreSQL 18. The ID generators in them are examples to copy;
-java-tuple encodes UUIDs and versionstamps but does not generate them.
+Each guide covers tuple keys in Java and, for the UUIDs, PostgreSQL 18.
+[UUID generators](docs/uuid-generators.md) explains the factories below: the odds of a collision, the precautions, and
+a checklist for writing a generator of your own.
 
 ## Compatibility
 
