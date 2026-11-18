@@ -70,6 +70,7 @@ Put such an ID last in a key, and the records under each prefix come back in tim
 
 ## How the guides are checked
 
-Every Java snippet compiles on Java 17 against the java-tuple API (and, for FoundationDB, `fdb-java`). Every SQL
+Every Java snippet compiles on Java 17 against the java-tuple API (and, for FoundationDB, `fdb-java`), except the
+one marked JDK 26+, which uses the JDK's own `UUID.ofEpochMillis` and compiles on JDK 26. Every SQL
 snippet has been run on PostgreSQL 18.7, with keys and IDs made by java-tuple, including the query plans the guides
 describe. When the API or a guide changes, check both again.

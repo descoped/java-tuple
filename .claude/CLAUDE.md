@@ -24,7 +24,7 @@ repository is carried over: this is a rewrite from the specification.
   versionstamps), with `docs/README.md` as the overview: shared principles, terms, and which guide answers what. Every
   guide has the same structure: Context, Goal, In short, numbered sections, Pitfalls, See also. Shared material lives
   once, in the overview; guides link to it instead of repeating it. Their
-  Java must compile on Java 17 against the current API, and their SQL must run on PostgreSQL 18; check both when the
+  Java must compile on Java 17 against the current API (a snippet marked JDK 26+ on JDK 26), and their SQL must run on PostgreSQL 18; check both when the
   API or a guide changes.
 - `TypeCode`: the type code constants. `package-info.java` documents the wire format in one table.
 - `Versionstamp` (record), `Range` (record with defensive copies): public values.

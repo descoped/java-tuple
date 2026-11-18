@@ -110,7 +110,7 @@ int region = generator.tag(id);
   the clock. If the clock goes back, the generator keeps its last timestamp and counts on, so IDs never decrease.
 - `processNumber(id)` and `tag(id)` read IDs made with the same `processBits`, by any generator.
 - The JDK has no UUIDv8 factory in any version, by design: the bits belong to the application. A layout of your own is a
-  few lines with `new UUID(msb, lsb)`; [UUID generators](uuid-generators.md#5-writing-your-own-generator) has a
+  few lines with `new UUID(msb, lsb)`; [UUID generators](uuid-generators.md#6-writing-your-own-generator) has a
   checklist.
 
 ## 6. Time windows in tuple keys

@@ -86,8 +86,9 @@ In PostgreSQL the same idea takes the form of columns: a primary key of `(tenant
 
 ## 4. Making UUIDv7s
 
-The JDK makes UUIDv7s from JDK 26 on, with `UUID.ofEpochMillis(long)`. On Java 17, java-tuple has two compliant
-factories:
+From JDK 26 on, the JDK makes random UUIDv7s itself, with `UUID.ofEpochMillis(long)`; use it there instead of
+`UuidV7.random()` ([the JDK's own UUIDv7](uuid-generators.md#2-the-jdks-own-uuidv7-from-jdk-26)). On JDK 17 to 25,
+java-tuple has two compliant factories:
 
 | Factory                  | `rand_a`                  | `rand_b`       | Order within a millisecond     |
 |--------------------------|---------------------------|----------------|--------------------------------|

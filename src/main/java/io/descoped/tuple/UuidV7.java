@@ -10,7 +10,8 @@ import java.util.UUID;
  * <p>The IDs sort by time to the millisecond; IDs made within the same millisecond sort in random order. When one
  * process must read its IDs back in exactly the order it made them, use {@link UuidV7Generator}.
  *
- * <p>The same as {@code UUID.ofEpochMillis} from JDK 26 on.
+ * <p>From JDK 26 on, {@code UUID.ofEpochMillis(long)} makes the same UUIDv7: prefer it there. This class is for JDK 17
+ * to 25, which have no UUIDv7 factory; its method has the same name, so moving to the JDK changes only the class.
  */
 public final class UuidV7 {
 

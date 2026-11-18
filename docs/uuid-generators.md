@@ -20,7 +20,8 @@ How to use the IDs in keys and in PostgreSQL is in [UUIDv7](uuidv7-metadata.md),
 
 ## In short
 
-- `UuidV7.random()` is the default: 74 random bits, no state, no limits.
+- `UuidV7.random()` is the default on JDK 17 to 25: 74 random bits, no state, no limits. From JDK 26 on,
+  `UUID.ofEpochMillis` in the JDK does the same; prefer it there (section 2).
 - `UuidV7Generator` when one process must read its IDs back in creation order; `UuidV8Generator` when the ID must
   carry a small tag. Both are unique within a process by construction.
 - Collisions are negligible for UUIDv7 at any realistic load, and impossible for UUIDv8 as long as **no two running
@@ -49,7 +50,35 @@ int region = tagged.tag(routed);
 UUID from = TimeUuids.lowerBound(Instant.parse("2026-11-18T10:00:00Z"));   // a range bound, never an ID
 ```
 
-## 2. Entropy against order
+## 2. The JDK's own UUIDv7, from JDK 26
+
+From JDK 26 on, `java.util.UUID` makes UUIDv7s itself, with `UUID.ofEpochMillis(long)`. JDK 17 to 25 cannot: their
+`UUID` makes only UUIDv4 (`randomUUID()`) and UUIDv3 (`nameUUIDFromBytes`).
+
+| Need                                         | JDK 17 to 25          | JDK 26 and later                                   |
+|----------------------------------------------|-----------------------|----------------------------------------------------|
+| UUIDv7, random                               | `UuidV7.random()`     | `UUID.ofEpochMillis(System.currentTimeMillis())`   |
+| UUIDv7 for a given time                      | `UuidV7.ofEpochMillis(millis)` | `UUID.ofEpochMillis(millis)`              |
+| UUIDv7 in creation order, per process        | `UuidV7Generator`     | `UuidV7Generator` (the JDK has none)               |
+| UUIDv8 with process number and tag           | `UuidV8Generator`     | `UuidV8Generator` (the JDK has none, by design)    |
+| Time of an ID, range bounds, byte order      | `TimeUuids`           | `TimeUuids` (the JDK has none)                     |
+
+On JDK 26 and later, prefer the JDK for random UUIDv7s:
+
+```java
+UUID id = UUID.ofEpochMillis(System.currentTimeMillis());   // JDK 26+: instead of UuidV7.random()
+long millis = TimeUuids.millis(id);                          // the helpers work on it as on any UUIDv7
+```
+
+- **Same layout**: the JDK's UUIDv7 is the same as `UuidV7.random()`, a 48-bit timestamp and 74 random bits, so the
+  two can be mixed in one key space: they sort together by time in tuple keys and in PostgreSQL.
+- **Same name on purpose**: `UuidV7.ofEpochMillis` mirrors the JDK method, so moving to the JDK is a change of class
+  name only.
+- **What stays**: the JDK has no generator that keeps IDs in creation order within a millisecond, no UUIDv8 factory,
+  no range bounds, and `UUID.compareTo` still compares signed longs. Keep `UuidV7Generator`, `UuidV8Generator` and
+  `TimeUuids` for those.
+
+## 3. Entropy against order
 
 Every bit given to a counter or to metadata is a bit less randomness. The more random bits, the less likely a
 collision and the harder an ID is to guess:
@@ -64,7 +93,7 @@ collision and the harder an ID is to guess:
 `UuidV7.random()` is the most a UUIDv7 can hold. The generators trade random bits for order, and in the UUIDv8 case for
 uniqueness by construction instead of by chance.
 
-## 3. The odds of a collision
+## 4. The odds of a collision
 
 Figures per year of continuous load (3.16 × 10¹⁰ milliseconds). A collision needs two IDs in the same millisecond, so
 what counts is the number of IDs made per millisecond, across every generator writing to the same key space.
@@ -109,7 +138,7 @@ m·k(k−1) / 2³³ per millisecond for the same tag.
 
 This is why the process number is a required constructor argument, and why it must be unique, as described next.
 
-## 4. Precautions
+## 5. Precautions
 
 ### Process numbers must be unique among running generators
 
@@ -189,7 +218,7 @@ that limit, 244 ns per ID. Below it, the cost of an ID is the read from `SecureR
 lock and the shared `SecureRandom` become the limit; measure first, then give each thread its own generator (with its
 own process number, for UUIDv8).
 
-## 5. Writing your own generator
+## 6. Writing your own generator
 
 You are encouraged to, when the factories do not fit: another split of the bits, a counter seeded randomly, sub-
 millisecond time (RFC 9562 method 3), or an ID scheme of your own. Check it against this list:

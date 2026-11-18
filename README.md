@@ -66,7 +66,9 @@ byte[] key = Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(
 ### Time-ordered UUIDs
 
 UUIDv7 and UUIDv8 start with a millisecond timestamp, so in a tuple key (and in PostgreSQL) they sort by the time they
-were made. java-tuple has small factories for them; use them, or build your own strategy.
+were made. java-tuple has small factories for them; use them, or build your own strategy. On JDK 26 and later,
+`UUID.ofEpochMillis` makes the same random UUIDv7 as `UuidV7.random()`; the generators and `TimeUuids` have no JDK
+counterpart.
 
 ```java
 UUID id = UuidV7.random();                          // 74 random bits, no state
