@@ -88,7 +88,7 @@ public final class TimeUuids {
      */
     public static int compare(UUID a, UUID b) {
         int byHigh = Long.compareUnsigned(a.getMostSignificantBits(), b.getMostSignificantBits());
-        return byHigh != 0 ? byHigh : Long.compareUnsigned(a.getLeastSignificantBits(), b.getLeastSignificantBits());
+        return byHigh == 0 ? Long.compareUnsigned(a.getLeastSignificantBits(), b.getLeastSignificantBits()) : byHigh;
     }
 
     static long requireMillis(long millis) {

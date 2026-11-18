@@ -234,7 +234,8 @@ class TimeUuidTest {
         assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(-1));
         assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(1L << 48));
         assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(Instant.MAX));
-        assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(Instant.EPOCH.minusMillis(1)));
+        Instant beforeEpoch = Instant.EPOCH.minusMillis(1);
+        assertThrows(IllegalArgumentException.class, () -> TimeUuids.lowerBound(beforeEpoch));
     }
 
     @Test
