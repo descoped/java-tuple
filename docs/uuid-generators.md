@@ -1,14 +1,33 @@
 # UUID generators: choices, precautions and collision odds
 
-java-tuple has small factories for time-ordered UUIDs. This guide explains what each one guarantees, how likely a
-collision is, and what to watch for, both when you use them and when you build a generator of your own. The
-factories are a convenience: if your needs differ, write your own strategy. The checklist at the end lists what it
-has to get right.
+## Context
 
-How to use the IDs in keys and in PostgreSQL is covered in [UUIDv7](uuidv7-metadata.md) and
-[UUIDv8](uuidv8-metadata.md).
+java-tuple has small factories for time-ordered UUIDs (UUIDv7 and UUIDv8). Making an ID looks trivial, but the choices
+behind it decide how likely two IDs are to collide, whether they come back in creation order, how easy they are to
+guess, and what happens when a clock jumps or a process is cloned. The factories are a convenience: if your needs
+differ, you are encouraged to write your own strategy.
 
-## The factories
+## Goal
+
+After this guide you can:
+- pick the right factory for a use case;
+- state the odds of a collision for your load;
+- run the generators safely: process numbers, randomness, clocks, snapshots;
+- write a generator of your own that keeps the same guarantees.
+
+How to use the IDs in keys and in PostgreSQL is in [UUIDv7](uuidv7-metadata.md), [UUIDv8](uuidv8-metadata.md) and
+[path keys](path-keys.md); the shared principles and terms are in the [guides overview](README.md).
+
+## In short
+
+- `UuidV7.random()` is the default: 74 random bits, no state, no limits.
+- `UuidV7Generator` when one process must read its IDs back in creation order; `UuidV8Generator` when the ID must
+  carry a small tag. Both are unique within a process by construction.
+- Collisions are negligible for UUIDv7 at any realistic load, and impossible for UUIDv8 as long as **no two running
+  generators share a process number**.
+- Randomness is always `SecureRandom`. IDs are identifiers, never secrets.
+
+## 1. The factories
 
 | Factory                        | Layout after the 48-bit timestamp           | Use it when                                         |
 |--------------------------------|---------------------------------------------|-----------------------------------------------------|
@@ -24,13 +43,13 @@ UuidV7Generator ordered = new UuidV7Generator();          // one per process
 UUID next = ordered.next();
 
 UuidV8Generator tagged = new UuidV8Generator(10, processNumber);   // 10 bits of process number, 20 of tag
-UUID routed = tagged.next(tenantNumber);
-int tenant = tagged.tag(routed);
+UUID routed = tagged.next(regionNumber);
+int region = tagged.tag(routed);
 
 UUID from = TimeUuids.lowerBound(Instant.parse("2026-11-18T10:00:00Z"));   // a range bound, never an ID
 ```
 
-## Entropy against order
+## 2. Entropy against order
 
 Every bit given to a counter or to metadata is a bit less randomness. The more random bits, the less likely a
 collision and the harder an ID is to guess:
@@ -45,7 +64,7 @@ collision and the harder an ID is to guess:
 `UuidV7.random()` is the most a v7 can hold. The generators trade random bits for order, and in the v8 case for
 uniqueness by construction instead of by chance.
 
-## The odds of a collision
+## 3. The odds of a collision
 
 Figures per year of continuous load (3.16 × 10¹⁰ milliseconds). A collision needs two IDs in the same millisecond, so
 what counts is the number of IDs made per millisecond, across every generator writing to the same key space.
@@ -90,7 +109,7 @@ m·k(k−1) / 2³³ per millisecond for the same tag.
 
 This is why the process number is a required constructor argument, and why it must be unique, as described next.
 
-## Precautions
+## 4. Precautions
 
 ### Process numbers must be unique among running generators
 
@@ -170,7 +189,7 @@ that limit, 244 ns per ID. Below it, the cost of an ID is the read from `SecureR
 lock and the shared `SecureRandom` become the limit; measure first, then give each thread its own generator (with its
 own process number, for v8).
 
-## Writing your own generator
+## 5. Writing your own generator
 
 You are encouraged to, when the factories do not fit: another split of the bits, a counter seeded randomly, sub-
 millisecond time (RFC 9562 method 3), or an ID scheme of your own. Check it against this list:
@@ -193,3 +212,10 @@ millisecond time (RFC 9562 method 3), or an ID scheme of your own. Check it agai
    factories.
 9. **Write the layout down** next to the code, and never change it for IDs already issued: nothing in an ID says which
    layout made it.
+
+## See also
+
+- [Guides overview](README.md): principles, terms, and choosing a time-ordered ID.
+- [Time-ordered keys with UUIDv7](uuidv7-metadata.md) and [Metadata inside a UUIDv8](uuidv8-metadata.md): using the
+  IDs in keys and in PostgreSQL 18.
+- [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562): the UUID specification.

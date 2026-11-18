@@ -75,7 +75,7 @@ UuidV7Generator ordered = new UuidV7Generator();    // one per process: strictly
 UUID next = ordered.next();
 
 UuidV8Generator tagged = new UuidV8Generator(10, processNumber);   // metadata inside the ID
-UUID routed = tagged.next(tenantNumber);                           // tagged.tag(routed) == tenantNumber
+UUID routed = tagged.next(regionNumber);                           // tagged.tag(routed) == regionNumber
 
 UUID from = TimeUuids.lowerBound(Instant.parse("2026-11-18T10:00:00Z"));   // range bounds, never IDs
 UUID to = TimeUuids.lowerBound(Instant.parse("2026-11-18T11:00:00Z"));
@@ -93,15 +93,16 @@ that is rejected too, so the library never writes bytes it will not read back.
 
 ## Guides
 
-Time-ordered keys that carry metadata (a tenant, a path, an entity type), three ways:
+The [guides](docs/README.md) show how to store and find data by keys that sort the way you query them, in PostgreSQL 18
+and FoundationDB. Start with the [overview](docs/README.md): it has the shared principles, the terms, and which guide
+answers which question.
 
-- [UUIDv7](docs/uuidv7-metadata.md): a standard UUIDv7 with the metadata in front of it in the key. The usual choice.
-- [UUIDv8](docs/uuidv8-metadata.md): the metadata inside the ID, for IDs that travel on their own.
-- [Versionstamps](docs/foundationdb-versionstamp.md): the FoundationDB way, ordered by commit.
-
-Each guide covers tuple keys in Java and, for the UUIDs, PostgreSQL 18.
-[UUID generators](docs/uuid-generators.md) explains the factories below: the odds of a collision, the precautions, and
-a checklist for writing a generator of your own.
+- [Hierarchical paths as keys](docs/path-keys.md): subtree queries and moves, with the packed path in a `bytea` column.
+- [Time-ordered keys with UUIDv7](docs/uuidv7-metadata.md): IDs that sort by time, with the metadata in the key.
+- [Metadata inside a UUIDv8](docs/uuidv8-metadata.md): a small, immutable value carried inside the ID.
+- [UUID generators](docs/uuid-generators.md): the factories above, the odds of a collision, the precautions, and how
+  to write your own.
+- [Versionstamps in FoundationDB](docs/foundationdb-versionstamp.md): keys ordered by commit.
 
 ## Compatibility
 
