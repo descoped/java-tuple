@@ -5,11 +5,22 @@ values, and unpack them again. The encoding is byte-for-byte compatible with the
 [FoundationDB tuple layer](https://github.com/apple/foundationdb/blob/main/design/tuple.md), so keys written here can be
 read by any FoundationDB client and the other way round.
 
+It also has small factories for time-ordered UUIDs (UUIDv7 and UUIDv8), and [guides](docs/README.md) on keys that sort
+the way they are queried, in PostgreSQL 18 and FoundationDB.
+
 - Java 17 or later, a JPMS module (`io.descoped.tuple`) that also works on the class path.
 - No runtime dependencies.
-- Immutable, thread-safe values.
+- Immutable, thread-safe values and generators.
 
 ## Use
+
+On the module path, require the module:
+
+```java
+module my.app {
+    requires io.descoped.tuple;
+}
+```
 
 ```java
 import io.descoped.tuple.Tuple;
@@ -63,12 +74,48 @@ little-endian integer, the format `SET_VERSIONSTAMPED_KEY` expects from API vers
 byte[] key = Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(subspacePrefix);
 ```
 
+### Time-ordered UUIDs
+
+UUIDv7 and UUIDv8 start with a millisecond timestamp, so in a tuple key (and in PostgreSQL) they sort by the time they
+were made. java-tuple has small factories for them; use them, or build your own strategy. On JDK 26 and later,
+`UUID.ofEpochMillis` makes the same UUIDv7 as `UuidV7.ofEpochMillis`; the generators and `TimeUuids` have no JDK
+counterpart.
+
+```java
+UUID id = UuidV7.random();                          // 74 random bits, no state
+
+UuidV7Generator ordered = new UuidV7Generator();    // one per process: strictly increasing IDs
+UUID next = ordered.next();
+
+UuidV8Generator tagged = new UuidV8Generator(10, processNumber);   // metadata inside the ID
+UUID routed = tagged.next(regionNumber);                           // tagged.tag(routed) == regionNumber
+
+UUID from = TimeUuids.lowerBound(Instant.parse("2026-11-18T10:00:00Z"));   // range bounds, never IDs
+UUID to = TimeUuids.lowerBound(Instant.parse("2026-11-18T11:00:00Z"));
+Range hour = new Range(Tuple.of("events", from).pack(), Tuple.of("events", to).pack());
+```
+
+Every running `UuidV8Generator` needs a process number of its own: that is what makes its IDs unique.
+
 ### Malformed input
 
 `Tuple.fromBytes` throws `IllegalArgumentException` for anything that is not a valid encoding, with the offset of the
-problem: a missing terminator, a truncated value, an unknown type code, a string that is not UTF-8, or tuples nested more
-than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested deeper than
-that is rejected too, so the library never writes bytes it will not read back.
+problem: a missing terminator, a truncated value, an unknown type code, a string that is not UTF-8, or tuples nested
+more than 1,000 levels deep (`Tuple.MAX_NESTING_DEPTH`). It never returns part of a tuple. Building a tuple nested
+deeper than that is rejected too, so the library never writes bytes it will not read back.
+
+## Guides
+
+The [guides](docs/README.md) show how to store and find data by keys that sort the way you query them, in PostgreSQL 18
+and FoundationDB. Start with the [overview](docs/README.md): it has the shared principles, the terms, and which guide
+answers which question.
+
+- [Hierarchical paths as keys](docs/path-keys.md): subtree queries and moves, with the packed path in a `bytea` column.
+- [Time-ordered keys with UUIDv7](docs/uuidv7-metadata.md): IDs that sort by time, with the metadata in the key.
+- [Metadata inside a UUIDv8](docs/uuidv8-metadata.md): a small, immutable value carried inside the ID.
+- [UUID generators](docs/uuid-generators.md): the factories above, the odds of a collision, the precautions, and how
+  to write your own.
+- [Versionstamps in FoundationDB](docs/foundationdb-versionstamp.md): keys ordered by commit.
 
 ## Compatibility
 
@@ -85,6 +132,7 @@ versionstamp, length-prefixed bytes) and user types `0x40`–`0x4f`.
 ```sh
 ./mvnw verify                    # compile with -Xlint:all -Werror, tests on the module path (JUnit 6)
 ./mvnw verify javadoc:javadoc    # plus Javadoc with doclint, warnings fail the build
+./mvnw verify -P coverage        # JaCoCo report in target/site/jacoco
 src/it/consumer/run.sh           # after package: a separate named module uses the jar, module path and class path
 ```
 

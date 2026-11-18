@@ -1,13 +1,16 @@
 package consumer;
 
+import io.descoped.tuple.TimeUuids;
 import io.descoped.tuple.Tuple;
+import io.descoped.tuple.UuidV7;
 import io.descoped.tuple.Versionstamp;
 
 import java.util.Arrays;
 import java.util.UUID;
 
 /**
- * Uses the library as an application would: pack a key, decode it, check the order, and pack with a versionstamp.
+ * Uses the library as an application would: pack a key, decode it, check the order, pack with a versionstamp, and make
+ * a UUIDv7.
  */
 public final class Main {
 
@@ -26,6 +29,8 @@ public final class Main {
         check(Tuple.of("user").range().contains(key), "range");
         check(Tuple.of("event", Versionstamp.incomplete(0)).packWithVersionstamp(new byte[0]).length == 24,
                 "versionstamp");
+        UUID uuid7 = UuidV7.random();
+        check(uuid7.version() == 7 && TimeUuids.lowerBound(TimeUuids.millis(uuid7)).version() == 0, "time-ordered UUID");
 
         Module module = Tuple.class.getModule();
         System.out.println("OK (" + mode + "): " + (module.isNamed() ? "module " + module.getName() : "class path"));

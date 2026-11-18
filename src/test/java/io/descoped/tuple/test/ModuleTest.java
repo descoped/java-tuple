@@ -57,7 +57,7 @@ class ModuleTest {
 
     @Test
     void internalsAreNotPublic() {
-        for (String internal : List.of("TupleEncoder", "TupleDecoder", "TypeCode", "ByteFormat")) {
+        for (String internal : List.of("TupleEncoder", "TupleDecoder", "TypeCode", "ByteFormat", "MillisecondCounter")) {
             Class<?> type = Class.forName(LIBRARY, "io.descoped.tuple." + internal);
             assertNotNull(type, internal + " not found");
             assertFalse(Modifier.isPublic(type.getModifiers()), internal + " must stay package-private");
