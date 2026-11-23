@@ -95,8 +95,8 @@
     </dependencies>
 
     <profiles>
-        <!-- Releases go only to Maven Central, through the Central Portal; SNAPSHOTs never do (profile
-             descoped-snapshots).
+        <!-- Releases go only to Maven Central, through the Central Portal; SNAPSHOTs never do: CI's snapshot job
+             publishes them to maven.descoped.io and names that target on its command line.
              The `secrets` profile is not in this pom: it lives in the owner's ~/.m2/settings.xml and loads the
              Portal token (see ~/.m2/NOTES.md).
              Release (Ove approves each one): ./mvnw release:prepare release:perform -P secrets
@@ -117,7 +117,7 @@
                                 <configuration>
                                     <rules>
                                         <requireReleaseVersion>
-                                            <message>Only releases go to Maven Central; SNAPSHOTs go to maven.descoped.io (-P descoped-snapshots).</message>
+                                            <message>Only releases go to Maven Central; SNAPSHOTs go to maven.descoped.io (published by CI).</message>
                                         </requireReleaseVersion>
                                         <requireReleaseDeps>
                                             <message>A release has no SNAPSHOT dependency.</message>
@@ -160,69 +160,6 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>false</autoPublish>
                             <waitUntil>validated</waitUntil>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
-        <!-- Publishing SNAPSHOTs to Descoped's AWS CodeArtifact repository, read publicly at https://maven.descoped.io/.
-             CI's `snapshot` job does this on a push to master, or by hand on a branch (workflow_dispatch). The URL
-             comes from a settings.xml profile that CI writes, so no account or endpoint is in a public file. -->
-        <profile>
-            <id>descoped-snapshots</id>
-            <distributionManagement>
-                <snapshotRepository>
-                    <id>descoped-snapshots</id>
-                    <url>${descoped.snapshots.url}</url>
-                </snapshotRepository>
-            </distributionManagement>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>only-snapshots-to-descoped</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <configuration>
-                                    <rules>
-                                        <requireSnapshotVersion>
-                                            <message>Only SNAPSHOTs go to maven.descoped.io; releases go to Maven Central (-P central,sign).</message>
-                                        </requireSnapshotVersion>
-                                        <requireProperty>
-                                            <property>descoped.snapshots.url</property>
-                                            <message>descoped.snapshots.url is not set: define it in a settings.xml profile (CI writes one).</message>
-                                            <regex>https://\S+/</regex>
-                                            <regexMessage>descoped.snapshots.url must be an https URL ending in /, not empty or an unexpanded ${env...}.</regexMessage>
-                                        </requireProperty>
-                                    </rules>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <!-- Sources for IDEs that use a SNAPSHOT. -->
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-source-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>attach-sources</id>
-                                <goals>
-                                    <goal>jar-no-fork</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <!-- Everything is built before the first upload, so a failed build uploads nothing. -->
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-deploy-plugin</artifactId>
-                        <configuration>
-                            <deployAtEnd>true</deployAtEnd>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -303,7 +240,7 @@
     <build>
         <pluginManagement>
             <plugins>
-                <!-- Sources for releases (profile central) and SNAPSHOTs (profile descoped-snapshots). -->
+                <!-- Sources for releases (profile central) and SNAPSHOTs (CI's snapshot job). -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
