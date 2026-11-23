@@ -26,6 +26,18 @@ Maven:
 
 Gradle: `implementation("io.descoped.tuple:java-tuple:0.1.0")`
 
+SNAPSHOTs of the next version are at `https://maven.descoped.io/` (SNAPSHOTs only): `X.Y.Z-SNAPSHOT` from `master`,
+and `X.Y.Z-<branch>-SNAPSHOT` from a branch built on request. Releases are only on Maven Central.
+
+```xml
+<repository>
+    <id>descoped-snapshots-public</id>
+    <url>https://maven.descoped.io/</url>
+    <releases><enabled>false</enabled></releases>
+    <snapshots><enabled>true</enabled></snapshots>
+</repository>
+```
+
 ## Use
 
 On the module path, require the module:

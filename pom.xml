@@ -130,7 +130,6 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>3.4.0</version>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -209,7 +208,6 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>3.4.0</version>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -303,9 +301,15 @@
     </profiles>
 
     <build>
-        <!-- Used by CI's snapshot job (help:evaluate, versions:set). -->
         <pluginManagement>
             <plugins>
+                <!-- Sources for releases (profile central) and SNAPSHOTs (profile descoped-snapshots). -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <!-- Used by CI's snapshot job (help:evaluate, versions:set). -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-help-plugin</artifactId>
