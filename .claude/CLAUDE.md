@@ -59,9 +59,10 @@ Efficiency choices, each covered by tests (keep them when changing the code):
 - **Publishing.** Releases go only to Maven Central, through the Central Portal (profiles `central,sign`), from the
   owner's machine and only with the owner's approval; CI never releases. After a release is on Maven Central, update
   the version in the README's Install section. SNAPSHOTs go only to maven.descoped.io (Descoped's AWS CodeArtifact),
-  from CI's `snapshot` job with profile `descoped-snapshots`: on a push to master, or by `workflow_dispatch` on a
-  branch as `X.Y.Z-<branch>-SNAPSHOT`. No AWS account ID or CodeArtifact endpoint in any public file (POM, workflow,
-  deployed POM, CI log).
+  from CI's `snapshot` job: on a push to master, or by `workflow_dispatch` on a branch as `X.Y.Z-<branch>-SNAPSHOT`.
+  The job names the target on its command line (`-DaltSnapshotDeploymentRepository`), and the POM has no
+  `distributionManagement` at all: that is what makes a release version fail to deploy there. Never add one. No AWS
+  account ID or CodeArtifact endpoint in any public file (POM, workflow, deployed POM, CI log).
 
 ## Testing
 
